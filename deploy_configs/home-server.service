@@ -1,0 +1,14 @@
+[Unit]
+Description="IoT home server"
+Wants=mosquitto.service
+After=mosquitto.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/pi
+ExecStart=/home/pi/home-server
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+

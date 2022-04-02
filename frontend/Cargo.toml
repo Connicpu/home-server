@@ -1,0 +1,31 @@
+[package]
+name = "frontend"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0"
+arc-cell = { version = "0.3.3", features = ["const-new"] }
+chrono = { version = "0.4.19", features = ["serde", "wasmbind"] }
+console_error_panic_hook = "0.1.7"
+gloo-timers = { version = "0.2.3", features = ["futures"] }
+js-sys = "0.3.56"
+jwt = "0.16.0"
+plotters = "0.3.1"
+plotters-backend = "0.3.2"
+plotters-canvas = "0.3"
+reqwest = { version = "0.11", features = ["json"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sycamore = { version = "0.8.0-beta.3", features = ["suspense", "serde"] }
+wasm-bindgen = { version = "0.2.79", features = ["serde-serialize"]  }
+wasm-bindgen-futures = "0.4.29"
+
+[dependencies.web-sys]
+version = "0.3.4"
+features = [
+  'CssStyleDeclaration',
+  'HtmlElement',
+  'Storage',
+  'Window',
+]

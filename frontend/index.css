@@ -1,0 +1,119 @@
+@media only screen and (max-width: 640px)  {}
+
+body {
+    background-color: cornflowerblue;
+}
+
+.collapsed {
+    display: none;
+}
+
+.main-body {
+    max-width: 800px;
+    margin: 0 auto;
+    padding: 10px 30px;
+    background-color: rgba(255, 255, 255, 0.5);
+    border-radius: 10px;
+    min-height: 90vh;
+}
+
+hr {
+    color: rgba(0, 0, 0, 0.25);
+}
+
+.login-form input {
+    font-size: 1.5em;
+    max-width: 100%;
+}
+
+.login-problem {
+    color: #CF0000;
+    font-weight: bolder;
+}
+
+.logout {
+    font-size: 0.8em;
+    font-weight: bold;
+    float: right;
+    text-decoration: none;
+    color: black;
+}
+
+.logout:hover {
+    text-decoration: underline;
+}
+
+.link-button {
+    font-weight: bold;
+    text-decoration: none;
+    color: #333;
+}
+
+.link-button:hover {
+    text-decoration: underline;
+}
+
+.link-button-bg {
+    background-color: darkgray;
+    border-radius: 2px;
+    padding: 2px 5px;
+    margin-right: 5px;
+    text-align: center;
+}
+
+#atticfan-control td {
+    width: 120px;
+    height: 40px;
+}
+
+#atticfan-control .status-on {
+    background-color: green;
+    border-radius: 2px;
+    padding: 2px 5px;
+    width: 50px;
+    text-align: center;
+}
+
+#atticfan-control .status-off {
+    background-color: darkgray;
+    border-radius: 2px;
+    padding: 2px 5px;
+    width: 50px;
+    text-align: center;
+}
+
+#thermostat-current-temp-wrapper {
+    padding: 5px 10px;
+    border-radius: 4px;
+    width: 220px;
+    text-align: center;
+    font-size: 1.8em;
+}
+
+.thermostat-off {
+    background-color: whitesmoke;
+}
+
+.thermostat-heat {
+    background-color: orange;
+}
+
+.thermostat-cool {
+    background-color: skyblue;
+}
+
+.thermostat-cmd-time {
+    width: 50px;
+}
+
+.thermostat-cmd-entry-item {
+    margin-bottom: 10px;
+}
+
+.thermostat-cmd-panel {
+    border-color: #777;
+    border-radius: 5px;
+    border-style: inset;
+    margin-top: 10px;
+    padding: 10px;
+}
