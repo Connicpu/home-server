@@ -40,6 +40,7 @@ async fn TemperatureGraph<G: Html>(cx: ScopeRef<'_>, params: GraphParams) -> Vie
 
         if !prepared.load(SeqCst) {
             prepare_canvas(&canvas);
+            prepared.store(true, SeqCst);
         }
 
         render_canvas(&canvas, &data).ok();
