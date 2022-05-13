@@ -49,6 +49,6 @@ pub fn Admin(cx: ScopeRef) -> View<DomNode> {
     }
 }
 
-async fn grant_authorization(username: Rc<String>, level: i32) -> anyhow::Result<()> {
+async fn grant_authorization(_username: Rc<String>, _level: i32) -> anyhow::Result<()> {
     Ok(())
 }

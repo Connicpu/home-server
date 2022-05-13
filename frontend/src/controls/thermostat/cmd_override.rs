@@ -2,7 +2,7 @@ use chrono::{DateTime, Duration, Local, Utc};
 use gloo_timers::future::sleep;
 use serde::{Deserialize, Serialize};
 use sycamore::{futures::ScopeSpawnLocal, prelude::*};
-use web_sys::window;
+use web_sys::{window, Event};
 
 use crate::{auth::auth_token, controls::thermostat::HvacRequest, helpers::create_saved_signal};
 
@@ -30,15 +30,18 @@ pub fn CommandOverride(cx: ScopeRef) -> View<DomNode> {
         false => "collapsed",
     });
 
-    let toggle_display = move |_| {
+    let toggle_display = move |e: Event| {
+        e.prevent_default();
         component_open.set(!*component_open.get());
     };
 
-    let toggle_command = move |_| {
+    let toggle_command = move |e: Event| {
+        e.prevent_default();
         panel_open.set(!*panel_open.get());
     };
 
-    let send_cmd = move |_| {
+    let send_cmd = move |e: Event| {
+        e.prevent_default();
         let selected_cmd = match &**selected_cmd.get().clone() {
             "off" => HvacRequest::Off,
             "heat" => HvacRequest::Heat,
@@ -62,7 +65,8 @@ pub fn CommandOverride(cx: ScopeRef) -> View<DomNode> {
         });
     };
 
-    let send_cancel = move |_| {
+    let send_cancel = move |e: Event| {
+        e.prevent_default();
         cx.spawn_local(async move {
             send_command(None).await;
             refresh_status(status).await;
