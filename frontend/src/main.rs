@@ -1,14 +1,17 @@
-#![feature(let_else)]
 #![allow(non_snake_case)]
 
-use sycamore::{futures::ScopeSpawnLocal, prelude::*};
+use std::time::Duration;
 
-use crate::helpers::create_saved_signal;
+use helpers::{create_saved_signal, start_signal_refresher};
+use models::{HvacMode, HvacModeState, HvacRequest, PinState, Temperature, Units};
+use sycamore::{futures::spawn_local_scoped, prelude::*};
 
 mod auth;
 mod controls;
+mod tabs;
 
 mod helpers;
+mod models;
 
 fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
@@ -21,13 +24,53 @@ fn main() {
 }
 
 #[component]
-fn App(cx: ScopeRef) -> View<DomNode> {
-    let logged_in = cx.create_signal(None);
+fn App(cx: Scope) -> View<DomNode> {
+    let logged_in = create_signal(cx, None);
 
     // Check our current log-in status first
-    cx.spawn_local(async move {
+    spawn_local_scoped(cx, async move {
         auth::check_logged_in(logged_in).await;
     });
+
+    // Global context signals
+    let units = create_saved_signal(cx, "thermostat-units", Units::Celcius);
+    provide_context_ref(cx, units);
+
+    let hvac_mode = create_saved_signal(cx, "cached-hvac-mode", HvacMode::Off);
+    provide_context_ref(cx, hvac_mode);
+    start_signal_refresher(
+        cx,
+        "thermostat/mode",
+        hvac_mode,
+        Duration::from_secs(30),
+        |ms: HvacModeState| ms.mode,
+    );
+
+    let temperature = create_saved_signal(cx, "cached-temperature", None::<Temperature>);
+    provide_context_ref(cx, temperature);
+    start_signal_refresher(
+        cx,
+        "thermostat/probes/primary/temperature",
+        temperature,
+        Duration::from_secs(3),
+        |x| Some(Temperature(x)),
+    );
+
+    let pinstate = create_saved_signal(cx, "cached-pinstate", PinState(HvacRequest::Off));
+    provide_context_ref(cx, pinstate);
+    {
+        #[derive(serde::Deserialize)]
+        struct HistoryEntry {
+            state: HvacRequest,
+        }
+        start_signal_refresher(
+            cx,
+            "thermostat/pinstate/history?start=0&stop=0",
+            pinstate,
+            Duration::from_secs(3),
+            |x: Vec<HistoryEntry>| PinState(x.get(0).map(|e| e.state).unwrap_or(HvacRequest::Off)),
+        );
+    }
 
     view! { cx,
         div(class="main-body") {
@@ -43,56 +86,18 @@ fn App(cx: ScopeRef) -> View<DomNode> {
 }
 
 #[component]
-fn Main<'a>(cx: ScopeRef<'a>, logged_in: &'a Signal<Option<bool>>) -> View<DomNode> {
+fn Main<'a>(cx: Scope<'a>, logged_in: &'a Signal<Option<bool>>) -> View<DomNode> {
     let logout = move |_| {
-        cx.spawn_local(async move {
+        spawn_local_scoped(cx, async move {
             auth::logout(logged_in).await;
         })
     };
-
-    let AtticFan = control_panel("Attic Fan", "attic-fan", controls::AtticFan);
-    let Thermostat = control_panel("Thermostat", "thermostat", controls::Thermostat);
 
     view! { cx,
         a(href="#/", on:click=logout, class="logout") {
             "Logout"
         }
 
-        AtticFan()
-        Thermostat()
-        (if *logged_in.get() == Some(true) && auth::is_auth_level(3) {
-            let Admin = control_panel("Admin", "admin", controls::Admin);
-            view! { cx, Admin() }
-        } else {
-            view! { cx, }
-        })
-    }
-}
-
-fn control_panel<G: Html>(
-    title: &'static str,
-    pref_key: &'static str,
-    Inner: fn(ScopeRef, ()) -> View<G>,
-) -> impl Fn(ScopeRef, ()) -> View<G> {
-    move |cx: ScopeRef, _| {
-        let visible = create_saved_signal(cx, pref_key, false);
-        let toggle = |_| {
-            visible.set(!*visible.get());
-        };
-        let display_class = cx.create_selector(|| match *visible.get() {
-            true => "",
-            false => "collapsed",
-        });
-        view! { cx,
-            div(class="control-panel") {
-                a(href="#/", on:click=toggle, class="link-button") {
-                    h1 { (title) }
-                }
-                div(class=display_class) {
-                    Inner()
-                }
-            }
-            hr
-        }
+        tabs::TabRoot(is_admin = *logged_in.get() == Some(true) && auth::is_auth_level(3))
     }
 }

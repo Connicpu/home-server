@@ -3,53 +3,68 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use warp::{filters::BoxedFilter, Filter, Reply};
 
-use crate::mqtt::MqttClient;
+use crate::StatePackage;
+
+#[derive(Clone, Default)]
+pub struct FanState {
+    inner: Arc<RwLock<InnerFanState>>,
+}
+
+impl FanState {
+    pub async fn big_succ(&self) -> bool {
+        self.inner.read().await.fan1
+    }
+
+    pub async fn roof_fan(&self) -> bool {
+        self.inner.read().await.fan0
+    }
+}
 
 #[derive(Default)]
-struct FanState {
+struct InnerFanState {
     fan0: bool,
     fan1: bool,
 }
 
-pub async fn routes(mqtt: &MqttClient) -> BoxedFilter<(impl Reply,)> {
-    let fan_state = Arc::new(RwLock::new(FanState::default()));
-
+pub async fn routes(state: StatePackage<'_>) -> BoxedFilter<(impl Reply,)> {
     // Handle updating the fan state from MQTT
     {
-        let fan_state = fan_state.clone();
-        mqtt.subscribe("home/atticfan/state").await;
-        mqtt.handle("home/atticfan/state", move |_topic, payload| {
-            if payload.len() != 2 {
-                return;
-            }
-
-            let fan = payload[0].wrapping_sub(b'0');
-            let val = payload[1] == b't';
-
-            let state = fan_state.clone();
-            tokio::task::spawn(async move {
-                let mut state = state.write().await;
-                match fan {
-                    0 => state.fan0 = val,
-                    1 => state.fan1 = val,
-                    _ => (),
+        let fan_state = state.fan.clone();
+        state.mqtt.subscribe("home/atticfan/state").await;
+        state
+            .mqtt
+            .handle("home/atticfan/state", move |_topic, payload| {
+                if payload.len() != 2 {
+                    return;
                 }
-            });
-        })
-        .await;
+
+                let fan = payload[0].wrapping_sub(b'0');
+                let val = payload[1] == b't';
+
+                let state = fan_state.clone();
+                tokio::task::spawn(async move {
+                    let mut state = state.inner.write().await;
+                    match fan {
+                        0 => state.fan0 = val,
+                        1 => state.fan1 = val,
+                        _ => (),
+                    }
+                });
+            })
+            .await;
 
         // Make sure we're fresh
-        mqtt.publish("home/atticfan/getstate", b"0").await;
-        mqtt.publish("home/atticfan/getstate", b"1").await;
+        state.mqtt.publish("home/atticfan/getstate", b"0").await;
+        state.mqtt.publish("home/atticfan/getstate", b"1").await;
     }
 
     // Handle requests for the current known fan state
     let getstate = {
-        let fan_state = fan_state.clone();
+        let fan_state = state.fan.clone();
         warp::path!("getstate" / i32).and_then(move |fan: i32| {
             let fan_state = fan_state.clone();
             async move {
-                let state = fan_state.read().await;
+                let state = fan_state.inner.read().await;
                 let val = match fan {
                     0 => state.fan0,
                     1 => state.fan1,
@@ -62,7 +77,7 @@ pub async fn routes(mqtt: &MqttClient) -> BoxedFilter<(impl Reply,)> {
     };
 
     let setstate = {
-        let mqtt = mqtt.clone();
+        let mqtt = state.mqtt.clone();
         warp::path!("setstate" / i32 / bool).and_then(move |fan, val| {
             let mqtt = mqtt.clone();
             async move {

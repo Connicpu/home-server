@@ -1,12 +1,12 @@
 use std::rc::Rc;
 
-use sycamore::{futures::ScopeSpawnLocal, prelude::*};
+use sycamore::{prelude::*, futures::spawn_local_scoped};
 use web_sys::window;
 
 #[component]
-pub fn Admin(cx: ScopeRef) -> View<DomNode> {
-    let grant_username = cx.create_signal(String::new());
-    let grant_level = cx.create_signal("0".to_string());
+pub fn Admin(cx: Scope) -> View<DomNode> {
+    let grant_username = create_signal(cx, String::new());
+    let grant_level = create_signal(cx, "0".to_string());
 
     let grant_auth = move |_| {
         let username = grant_username.get();
@@ -23,7 +23,7 @@ pub fn Admin(cx: ScopeRef) -> View<DomNode> {
             return;
         }
 
-        cx.spawn_local(async move {
+        spawn_local_scoped(cx, async move {
             if let Err(err) = grant_authorization(username, level).await {
                 window()
                     .unwrap()

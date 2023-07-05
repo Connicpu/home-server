@@ -6,18 +6,15 @@ use warp::{
 
 use crate::{
     error::WebErrorExt,
-    hvac::{
-        mixer::timed_rule::{TimedRuleSet, CURRENT_RULESET_KEY},
-        HvacState,
-    },
-    RedisConn,
+    hvac::mixer::timed_rule::{TimedRuleSet, CURRENT_RULESET_KEY},
+    StatePackage,
 };
 
-pub async fn routes(redis: &RedisConn, hvac: &HvacState) -> BoxedFilter<(impl Reply,)> {
+pub async fn routes(state: StatePackage<'_>) -> BoxedFilter<(impl Reply,)> {
     const SAVED_RULES: &str = "thermostat.config.savedrules";
 
     let current = {
-        let hvac = hvac.clone();
+        let hvac = state.hvac.clone();
         warp::path("current")
             .and(path::end())
             .and(warp::get())
@@ -31,8 +28,8 @@ pub async fn routes(redis: &RedisConn, hvac: &HvacState) -> BoxedFilter<(impl Re
     };
 
     let set_current = {
-        let hvac = hvac.clone();
-        let redis = redis.clone();
+        let hvac = state.hvac.clone();
+        let redis = state.redis.clone();
         let activate_rule = redis::Script::new(&format!(
             r#"
             local ruleset = redis.call('HGET', '{SAVED_RULES}', ARGV[1])
@@ -69,7 +66,7 @@ pub async fn routes(redis: &RedisConn, hvac: &HvacState) -> BoxedFilter<(impl Re
     };
 
     let active_rule = {
-        let hvac = hvac.clone();
+        let hvac = state.hvac.clone();
         warp::path("active_rule")
             .and(warp::get())
             .and_then(move || {
@@ -82,7 +79,7 @@ pub async fn routes(redis: &RedisConn, hvac: &HvacState) -> BoxedFilter<(impl Re
     };
 
     let saved_rules = {
-        let redis = redis.clone();
+        let redis = state.redis.clone();
         warp::path("saved_rules")
             .and(path::end())
             .and(warp::get())
@@ -98,7 +95,7 @@ pub async fn routes(redis: &RedisConn, hvac: &HvacState) -> BoxedFilter<(impl Re
     };
 
     let get_saved_rule = {
-        let redis = redis.clone();
+        let redis = state.redis.clone();
         warp::path!("saved_rules" / String)
             .and(path::end())
             .and(warp::get())
@@ -114,7 +111,7 @@ pub async fn routes(redis: &RedisConn, hvac: &HvacState) -> BoxedFilter<(impl Re
     };
 
     let put_saved_rule = {
-        let redis = redis.clone();
+        let redis = state.redis.clone();
         warp::path!("saved_rules" / String)
             .and(path::end())
             .and(warp::put())

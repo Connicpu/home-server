@@ -2,28 +2,28 @@ use std::{rc::Rc, time::Duration};
 
 use gloo_timers::future::sleep;
 use reqwest::StatusCode;
-use sycamore::{futures::ScopeSpawnLocal, prelude::*};
+use sycamore::{prelude::*, futures::spawn_local_scoped};
 use web_sys::window;
 
 use crate::auth::auth_token;
 
 #[component]
-pub fn AtticFan(cx: ScopeRef) -> View<DomNode> {
-    let big_succ_state = cx.create_signal(false);
-    let roof_fan_state = cx.create_signal(false);
+pub fn AtticFan(cx: Scope) -> View<DomNode> {
+    let big_succ_state = create_signal(cx, false);
+    let roof_fan_state = create_signal(cx, false);
 
     start_refresh_state_loop(cx, big_succ_state.clone(), roof_fan_state.clone());
 
-    let big_succ_class = cx.create_selector(|| indicator_class(big_succ_state.get()));
-    let roof_fan_class = cx.create_selector(|| indicator_class(roof_fan_state.get()));
+    let big_succ_class = create_selector(cx, || indicator_class(big_succ_state.get()));
+    let roof_fan_class = create_selector(cx, || indicator_class(roof_fan_state.get()));
 
-    let big_succ_value = cx.create_selector(|| indicator_value(big_succ_state.get()));
-    let roof_fan_value = cx.create_selector(|| indicator_value(roof_fan_state.get()));
+    let big_succ_value = create_selector(cx, || indicator_value(big_succ_state.get()));
+    let roof_fan_value = create_selector(cx, || indicator_value(roof_fan_state.get()));
 
     let toggle_big_succ = move |_| {
         let new_state = !*big_succ_state.get();
         big_succ_state.set(new_state);
-        cx.spawn_local(async move {
+        spawn_local_scoped(cx, async move {
             set_state(BIG_SUCC, new_state).await;
         });
     };
@@ -31,7 +31,7 @@ pub fn AtticFan(cx: ScopeRef) -> View<DomNode> {
     let toggle_roof_fan = move |_| {
         let new_state = !*roof_fan_state.get();
         roof_fan_state.set(new_state);
-        cx.spawn_local(async move {
+        spawn_local_scoped(cx, async move {
             set_state(ROOF_FAN, new_state).await;
         });
     };
@@ -108,8 +108,8 @@ async fn set_state(fan: i32, state: bool) {
         .await;
 }
 
-fn start_refresh_state_loop<'a>(cx: ScopeRef<'a>, bs: &'a Signal<bool>, rf: &'a Signal<bool>) {
-    cx.spawn_local(async move {
+fn start_refresh_state_loop<'a>(cx: Scope<'a>, bs: &'a Signal<bool>, rf: &'a Signal<bool>) {
+    spawn_local_scoped(cx, async move {
         loop {
             bs.set(get_state(BIG_SUCC).await);
             rf.set(get_state(ROOF_FAN).await);

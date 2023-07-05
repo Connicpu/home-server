@@ -3,7 +3,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use redis::AsyncCommands;
 use tokio::sync::RwLock;
 
-use crate::{mqtt::MqttClient, RedisConn};
+use crate::{mqtt::MqttClient, RedisConn, api::atticfan::FanState};
 
 use self::{
     mixer::{AtomicHvacRequest, HvacRequest, Mixer, MixerState},
@@ -17,6 +17,7 @@ pub mod probe;
 pub struct HvacState {
     pub probes: Probes,
     pub mixer: Mixer,
+    pub hvac_mode: Arc<AtomicHvacRequest>
 }
 
 pub const PROBE_ENDPOINTS: &str = "thermostat.config.probe_endpoints";
@@ -24,7 +25,7 @@ pub const CONFIG_MODE: &str = "thermostat.config.mode";
 pub const PROBE_HISTORY: &str = "thermostat.probes.history";
 pub const PINSTATE_HISTORY: &str = "thermostat.pinstate.history";
 
-pub async fn initialize(mqtt: &MqttClient, redis: &RedisConn) -> anyhow::Result<HvacState> {
+pub async fn initialize(mqtt: &MqttClient, redis: &RedisConn, fan_state: &FanState) -> anyhow::Result<HvacState> {
     // Create the primary probe
     let probes: Probes = Default::default();
     init_probe(&probes, mqtt, Probe::new("primary", "home/thermostat/temp")).await;
@@ -76,7 +77,7 @@ pub async fn initialize(mqtt: &MqttClient, redis: &RedisConn) -> anyhow::Result<
     }
 
     // Create the mixer
-    let mixer_state = MixerState::new(redis, probes.clone(), hvac_mode.clone()).await;
+    let mixer_state = MixerState::new(redis, probes.clone(), hvac_mode.clone(), fan_state.clone()).await;
     let mixer = Mixer::new(mixer_state);
 
     // Create the mix sender
@@ -193,7 +194,7 @@ pub async fn initialize(mqtt: &MqttClient, redis: &RedisConn) -> anyhow::Result<
     }
 
     // Create the final HVAC state
-    Ok(HvacState { probes, mixer })
+    Ok(HvacState { probes, mixer, hvac_mode })
 }
 
 #[derive(Default, Clone)]

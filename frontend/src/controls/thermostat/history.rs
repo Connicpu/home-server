@@ -4,19 +4,17 @@ use anyhow::bail;
 use chrono::{DateTime, Utc};
 use plotters_canvas::CanvasBackend;
 use serde::Deserialize;
-use sycamore::{futures::ScopeSpawnLocal, prelude::*};
+use sycamore::{prelude::*, futures::spawn_local_scoped};
 use wasm_bindgen::JsCast;
 use web_sys::{window, CanvasRenderingContext2d, HtmlCanvasElement};
 
 use crate::auth::auth_token;
 
 #[component]
-pub fn TemperatureHistory<G: Html>(cx: ScopeRef) -> View<G> {
+pub fn TemperatureHistory<G: Html>(cx: Scope) -> View<G> {
     view! { cx,
         h2 { "History" }
-        TemperatureGraph {
-            probe: "primary".into()
-        }
+        TemperatureGraph(probe = "primary".into())
     }
 }
 
@@ -26,13 +24,13 @@ struct GraphParams {
 }
 
 #[component]
-async fn TemperatureGraph<G: Html>(cx: ScopeRef<'_>, params: GraphParams) -> View<G> {
+async fn TemperatureGraph<G: Html>(cx: Scope<'_>, params: GraphParams) -> View<G> {
     let initial_data = get_day_history(&params.probe).await.unwrap_or(vec![]);
-    let data = cx.create_signal(vec![]);
-    let prepared = cx.create_ref(AtomicBool::new(false));
-    let canvas_node = cx.create_node_ref();
+    let data = create_signal(cx, vec![]);
+    let prepared = create_ref(cx, AtomicBool::new(false));
+    let canvas_node = create_node_ref(cx, );
 
-    cx.create_effect(move || {
+    create_effect(cx, move || {
         let data = data.get();
         let Some(canvas) = canvas_node.try_get::<DomNode>() else {
             return;
@@ -46,7 +44,7 @@ async fn TemperatureGraph<G: Html>(cx: ScopeRef<'_>, params: GraphParams) -> Vie
         render_canvas(&canvas, &data).ok();
     });
 
-    cx.spawn_local(async move {
+    spawn_local_scoped(cx, async move {
         data.set(initial_data);
     });
 

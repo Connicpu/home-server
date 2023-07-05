@@ -1,7 +1,7 @@
 [Unit]
 Description="IoT home server"
-Wants=mosquitto.service
-After=mosquitto.service
+Wants=mosquitto.service nginx.service
+After=mosquitto.service nginx.service
 
 [Service]
 Type=simple

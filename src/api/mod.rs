@@ -1,7 +1,7 @@
 use http::StatusCode;
-use warp::{reply, filters::BoxedFilter, Filter, Reply, Rejection};
+use warp::{filters::BoxedFilter, reply, Filter, Rejection, Reply};
 
-use crate::{hvac::HvacState, mqtt::MqttClient, RedisConn};
+use crate::StatePackage;
 
 use self::auth::AuthFailed;
 
@@ -9,15 +9,15 @@ pub mod atticfan;
 pub mod auth;
 pub mod thermostat;
 
-pub async fn routes(
-    mqtt: &MqttClient,
-    redis: &RedisConn,
-    hvac: &HvacState,
-) -> BoxedFilter<(impl Reply,)> {
-    let auth = warp::path("auth").and(auth::routes(redis.clone()).await);
+pub async fn routes(state: StatePackage<'_>) -> BoxedFilter<(impl Reply,)> {
+    let auth = warp::path("auth").and(auth::routes(state).await);
 
-    let atticfan = warp::path("atticfan").and(auth::with_auth(1)).and(atticfan::routes(mqtt).await);
-    let thermostat = warp::path("thermostat").and(auth::with_auth(1)).and(thermostat::routes(redis, hvac).await);
+    let atticfan = warp::path("atticfan")
+        .and(auth::with_auth(1))
+        .and(atticfan::routes(state).await);
+    let thermostat = warp::path("thermostat")
+        .and(auth::with_auth(1))
+        .and(thermostat::routes(state).await);
 
     let authed_routes = atticfan.or(thermostat);
     auth.or(authed_routes)

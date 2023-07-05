@@ -17,7 +17,7 @@ plotters-canvas = "0.3"
 reqwest = { version = "0.11", features = ["json"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-sycamore = { version = "0.8.0-beta.3", features = ["suspense", "serde"] }
+sycamore = { version = "0.8.2", features = ["suspense", "serde"] }
 wasm-bindgen = { version = "0.2.79", features = ["serde-serialize"]  }
 wasm-bindgen-futures = "0.4.29"
 

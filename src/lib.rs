@@ -1,10 +1,11 @@
-#![feature(let_else)]
-
+use hvac::HvacState;
+use mqtt::MqttClient;
 use rumqttc::MqttOptions;
 use std::future::Future;
 use std::time::Duration;
 
 pub use self::redis::RedisConn;
+use api::atticfan::FanState;
 
 #[cfg(feature = "routes")]
 pub mod api;
@@ -17,8 +18,16 @@ pub mod redis;
 const PORT: u16 = 3030;
 const MQTT_HOST: &str = "raspberrypi.local";
 const MQTT_PORT: u16 = 1883;
-const REDIS_HOST: &str = "CNC-NAS.local";
+const REDIS_HOST: &str = "nas.iot.connieh.com";
 const REDIS_PORT: u16 = 6379;
+
+#[derive(Copy, Clone)]
+pub struct StatePackage<'a> {
+    mqtt: &'a MqttClient,
+    redis: &'a RedisConn,
+    hvac: &'a HvacState,
+    fan: &'a FanState,
+}
 
 #[cfg(feature = "routes")]
 pub async fn run_server() -> anyhow::Result<()> {
@@ -29,10 +38,17 @@ pub async fn run_server() -> anyhow::Result<()> {
     };
 
     let redis: RedisConn = RedisConn::open(REDIS_HOST, REDIS_PORT).await?;
+    let fan_state = FanState::default();
+    let hvac = hvac::initialize(&mqtt, &redis, &fan_state).await?;
 
-    let hvac = hvac::initialize(&mqtt, &redis).await?;
+    let state = StatePackage {
+        mqtt: &mqtt,
+        redis: &redis,
+        hvac: &hvac,
+        fan: &fan_state
+    };
 
-    let api = api::routes(&mqtt, &redis, &hvac).await;
+    let api = api::routes(state).await;
 
     warp::serve(api).run(([0, 0, 0, 0], PORT)).await;
 

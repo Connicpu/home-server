@@ -11,13 +11,12 @@ use warp::{
 use crate::{
     error::WebErrorExt,
     helpers::extract_redis_history_params,
-    hvac::{HvacState, PROBE_HISTORY},
-    RedisConn,
+    hvac::{PROBE_HISTORY}, StatePackage,
 };
 
-pub async fn routes(redis: &RedisConn, hvac: &HvacState) -> BoxedFilter<(impl Reply,)> {
+pub async fn routes(state: StatePackage<'_>) -> BoxedFilter<(impl Reply,)> {
     let index = {
-        let probes = hvac.probes.clone();
+        let probes = state.hvac.probes.clone();
         path::end().and(warp::get()).and_then(move || {
             let probes = probes.clone();
             async move { serde_json::to_string(&probes.keys().await).reject_err() }
@@ -25,7 +24,7 @@ pub async fn routes(redis: &RedisConn, hvac: &HvacState) -> BoxedFilter<(impl Re
     };
 
     let temperature = {
-        let probes = hvac.probes.clone();
+        let probes = state.hvac.probes.clone();
         warp::path!(String / "temperature")
             .and(path::end())
             .and(warp::get())
@@ -43,7 +42,7 @@ pub async fn routes(redis: &RedisConn, hvac: &HvacState) -> BoxedFilter<(impl Re
     };
 
     let history = {
-        let redis = redis.clone();
+        let redis = state.redis.clone();
         warp::path!(String / "history")
             .and(warp::query::<HashMap<String, String>>())
             .and(path::end())
@@ -74,10 +73,10 @@ pub async fn routes(redis: &RedisConn, hvac: &HvacState) -> BoxedFilter<(impl Re
                             let temp = split.next().and_then(|s| f64::from_str(s).ok())?;
                             Some(HistoryEntry {
                                 time: DateTime::from_utc(
-                                    NaiveDateTime::from_timestamp(
+                                    NaiveDateTime::from_timestamp_opt(
                                         time_i / 1000,
                                         (time_i % 1000) as u32 * 1_000_000,
-                                    ),
+                                    )?,
                                     offset,
                                 ),
                                 temp,

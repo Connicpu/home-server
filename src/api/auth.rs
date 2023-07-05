@@ -11,7 +11,7 @@ use warp::{
     Filter, Rejection, Reply,
 };
 
-use crate::{error::WebErrorExt, RedisConn};
+use crate::{error::WebErrorExt, RedisConn, StatePackage};
 
 const TOKEN_DAYS: i64 = 30;
 
@@ -37,7 +37,8 @@ pub fn with_auth(level: i32) -> BoxedFilter<()> {
         .boxed()
 }
 
-pub async fn routes(redis: RedisConn) -> BoxedFilter<(impl Reply,)> {
+pub async fn routes(state: StatePackage<'_>) -> BoxedFilter<(impl Reply,)> {
+    let redis = state.redis.clone();
     let login = {
         let redis = redis.clone();
         warp::path("login")

@@ -1,8 +1,14 @@
+use std::time::Duration;
+
+use gloo_timers::future::sleep;
+use reqwest::StatusCode;
 use serde::{de::DeserializeOwned, Serialize};
-use sycamore::prelude::*;
+use sycamore::{futures::spawn_local_scoped, prelude::*};
 use web_sys::window;
 
-pub fn create_saved_signal<'a, T>(cx: ScopeRef<'a>, name: &'static str, default: T) -> &'a Signal<T>
+use crate::auth::auth_token;
+
+pub fn create_saved_signal<'a, T>(cx: Scope<'a>, name: &'static str, default: T) -> &'a Signal<T>
 where
     T: Serialize + DeserializeOwned,
 {
@@ -20,10 +26,55 @@ where
 
     let initial = get_value(name).unwrap_or(default);
 
-    let signal = cx.create_signal(initial);
-    cx.create_effect(move || {
+    let signal = create_signal(cx, initial);
+    create_effect(cx, move || {
         set_value(name, &*signal.get());
     });
 
     signal
+}
+
+pub async fn refresh_signal<'a, T, J, F>(path: &'static str, signal: &'a Signal<T>, func: F)
+where
+    J: serde::de::DeserializeOwned,
+    F: Fn(J) -> T,
+{
+    let base = window().unwrap().origin();
+    let Ok(response) = reqwest::Client::new()
+        .get(format!("{base}/api/{path}"))
+        .header("X-Auth", auth_token())
+        .send()
+        .await else {
+            return;
+        };
+
+    if response.status() != StatusCode::OK {
+        return;
+    }
+
+    let Ok(value) = response.json::<J>().await else {
+        return;
+    };
+
+    let value = func(value);
+    signal.set(value);
+}
+
+pub fn start_signal_refresher<'a, T, J, F>(
+    cx: Scope<'a>,
+    path: &'static str,
+    signal: &'a Signal<T>,
+    interval: Duration,
+    func: F,
+) where
+    J: serde::de::DeserializeOwned,
+    F: Fn(J) -> T + 'a,
+{
+    spawn_local_scoped(cx, async move {
+        loop {
+            refresh_signal(path, signal, &func).await;
+
+            sleep(interval).await;
+        }
+    });
 }

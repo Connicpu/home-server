@@ -1,31 +1,31 @@
 use chrono::{DateTime, Duration, Local, Utc};
 use gloo_timers::future::sleep;
 use serde::{Deserialize, Serialize};
-use sycamore::{futures::ScopeSpawnLocal, prelude::*};
+use sycamore::{prelude::*, futures::spawn_local_scoped};
 use web_sys::{window, Event};
 
-use crate::{auth::auth_token, controls::thermostat::HvacRequest, helpers::create_saved_signal};
+use crate::{auth::auth_token, helpers::create_saved_signal, models::HvacRequest};
 
 #[component]
-pub fn CommandOverride(cx: ScopeRef) -> View<DomNode> {
+pub fn CommandOverride(cx: Scope) -> View<DomNode> {
     let component_open = create_saved_signal(cx, "command-override-open", false);
-    let panel_open = cx.create_signal(false);
-    let status = cx.create_signal("None".to_string());
+    let panel_open = create_signal(cx, false);
+    let status = create_signal(cx, "None".to_string());
 
     refresh_status_loop(cx, status);
 
-    let selected_cmd = cx.create_signal("off".to_string());
-    let selected_time = cx.create_signal("10".to_string());
+    let selected_cmd = create_saved_signal(cx, "override_cmd_selection", "off".to_string());
+    let selected_time = create_signal(cx, "10".to_string());
 
-    let component_class = cx.create_selector(|| match *component_open.get() {
+    let component_class = create_selector(cx, || match *component_open.get() {
         true => "",
         false => "collapsed",
     });
-    let send_text = cx.create_selector(|| match *panel_open.get() {
+    let send_text = create_selector(cx, || match *panel_open.get() {
         true => "Cancel",
         false => "Send Command",
     });
-    let panel_class = cx.create_selector(|| match *panel_open.get() {
+    let panel_class = create_selector(cx, || match *panel_open.get() {
         true => "thermostat-cmd-panel",
         false => "collapsed",
     });
@@ -58,7 +58,7 @@ pub fn CommandOverride(cx: ScopeRef) -> View<DomNode> {
             request: selected_cmd,
         };
 
-        cx.spawn_local(async move {
+        spawn_local_scoped(cx, async move {
             send_command(Some(request)).await;
             refresh_status(status).await;
             panel_open.set(false);
@@ -67,7 +67,7 @@ pub fn CommandOverride(cx: ScopeRef) -> View<DomNode> {
 
     let send_cancel = move |e: Event| {
         e.prevent_default();
-        cx.spawn_local(async move {
+        spawn_local_scoped(cx, async move {
             send_command(None).await;
             refresh_status(status).await;
             panel_open.set(false);
@@ -77,7 +77,14 @@ pub fn CommandOverride(cx: ScopeRef) -> View<DomNode> {
     view! { cx,
         div {
             a(href="#/", class="link-button", on:click=toggle_display) {
-                h2 { "Command Override" }
+                h2 {
+                    "Command Override"
+                    (if *component_open.get() {
+                        "▼"
+                    } else {
+                        "▶"
+                    })
+                }
             }
             div(class=component_class) {
                 div(style="font-size:1.5em", class="thermostat-cmd-entry-item") {
@@ -94,9 +101,9 @@ pub fn CommandOverride(cx: ScopeRef) -> View<DomNode> {
                         label {
                             "Command: "
                             select(bind:value=selected_cmd) {
-                                option(value="off") { "Off" }
-                                option(value="heat") { "Heat" }
-                                option(value="cool") { "Cool" }
+                                option(value="off", selected=*selected_cmd.get()=="off") { "Off" }
+                                option(value="heat", selected=*selected_cmd.get()=="heat") { "Heat" }
+                                option(value="cool", selected=*selected_cmd.get()=="cool") { "Cool" }
                             }
                         }
                     }
@@ -177,8 +184,8 @@ async fn refresh_status(status: &Signal<String>) {
     }
 }
 
-fn refresh_status_loop<'a>(cx: ScopeRef<'a>, status: &'a Signal<String>) {
-    cx.spawn_local(async move {
+fn refresh_status_loop<'a>(cx: Scope<'a>, status: &'a Signal<String>) {
+    spawn_local_scoped(cx, async move {
         loop {
             refresh_status(&status).await;
 

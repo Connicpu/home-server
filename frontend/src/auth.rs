@@ -6,7 +6,7 @@ use gloo_timers::future::sleep;
 use jwt::{Token, Header};
 use reqwest::StatusCode;
 use serde::{Serialize, Deserialize};
-use sycamore::{prelude::*, futures::ScopeSpawnLocal};
+use sycamore::{prelude::*, futures::spawn_local_scoped};
 use web_sys::{window, Event};
 
 static AUTH_TOKEN: OptionalArcCell<String> = OptionalArcCell::const_new();
@@ -15,10 +15,10 @@ pub fn auth_token() -> String {
 }
 
 #[component]
-pub fn LoginForm<'a, G: Html>(cx: ScopeRef<'a>, logged_in: &'a Signal<Option<bool>>) -> View<G> {
-    let username = cx.create_signal(String::new());
-    let password = cx.create_signal(String::new());
-    let problem = cx.create_signal(String::new());
+pub fn LoginForm<'a, G: Html>(cx: Scope<'a>, logged_in: &'a Signal<Option<bool>>) -> View<G> {
+    let username = create_signal(cx, String::new());
+    let password = create_signal(cx, String::new());
+    let problem = create_signal(cx, String::new());
 
     let do_login = on_login(cx, username, password, problem, logged_in);
 
@@ -53,7 +53,7 @@ pub fn LoginForm<'a, G: Html>(cx: ScopeRef<'a>, logged_in: &'a Signal<Option<boo
 }
 
 fn on_login<'a>(
-    cx: ScopeRef<'a>,
+    cx: Scope<'a>,
     username: &'a Signal<String>,
     password: &'a Signal<String>,
     problem: &'a Signal<String>,
@@ -65,7 +65,7 @@ fn on_login<'a>(
         let username = username.get();
         let password = password.get();
 
-        cx.spawn_local(async move {
+        spawn_local_scoped(cx, async move {
             match login(&username, &password).await {
                 Ok(auth_token) => {
                     if let Some(local_storage) = window().unwrap().local_storage().unwrap() {
