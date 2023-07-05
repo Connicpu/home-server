@@ -37,6 +37,10 @@ pub fn OneshotSetpoint(cx: Scope<'_>) -> View<DomNode> {
         Units::Celcius => "°C",
         Units::Fahrenheit => "°F",
     });
+    let transform_temp = |temp: f32| match *units.get() {
+        Units::Celcius => temp,
+        Units::Fahrenheit => temp * 9.0 / 5.0 + 32.0,
+    };
 
     let component_class = create_selector(cx, || match *component_open.get() {
         true => "",
@@ -123,7 +127,7 @@ pub fn OneshotSetpoint(cx: Scope<'_>) -> View<DomNode> {
                         "Current Program: "
                         (state.action)
                         " until "
-                        (state.setpoint)
+                        (transform_temp(state.setpoint))
                         (units_display.get())
                     }
                 }

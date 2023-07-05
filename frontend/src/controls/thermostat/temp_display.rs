@@ -10,8 +10,8 @@ pub fn TemperatureDisplay(cx: Scope) -> View<DomNode> {
 
     let temperature_display = create_selector(cx, || {
         match (temperature.get().map(|t| t.0), *units.get()) {
-            (Some(temp), Units::Celcius) => format!("{:.1}°C", temp),
-            (Some(temp), Units::Fahrenheit) => format!("{:.0}°F", temp * 9. / 5. + 32.),
+            (Some(temp), Units::Celcius) => format!("{:.2}°C", temp),
+            (Some(temp), Units::Fahrenheit) => format!("{:.1}°F", temp * 9. / 5. + 32.),
             (None, _) => format!("..."),
         }
     });
