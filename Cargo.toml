@@ -23,6 +23,7 @@ tokio = { version = "1.29.0", features = ["full", "tracing"] }
 tracing = { version = "0.1.32", features = ["release_max_level_off"] }
 uuid = { version = "0.8.2", features = ["v4"] }
 warp = "0.3.2"
+models = { path = "models" }
 
 [profile.release]
 panic = "abort"
@@ -37,4 +38,4 @@ routes = []
 default = ["routes"]
 
 [workspace]
-members = ["frontend"]
+members = ["frontend", "models"]

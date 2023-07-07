@@ -1,10 +1,11 @@
 #![allow(non_snake_case)]
+#![feature(iter_array_chunks)]
 
 use std::time::Duration;
-
-use helpers::{create_saved_signal, start_signal_refresher};
-use models::{HvacMode, HvacModeState, HvacRequest, PinState, Temperature, Units};
 use sycamore::{futures::spawn_local_scoped, prelude::*};
+
+use crate::helpers::{create_saved_signal, start_signal_refresher};
+use crate::models::{HvacMode, HvacModeState, HvacRequest, PinState, Temperature, Units};
 
 mod auth;
 mod controls;
@@ -59,7 +60,7 @@ fn App(cx: Scope) -> View<DomNode> {
     let pinstate = create_saved_signal(cx, "cached-pinstate", PinState(HvacRequest::Off));
     provide_context_ref(cx, pinstate);
     {
-        #[derive(serde::Deserialize)]
+        #[derive(serde::Deserialize, serde::Serialize)]
         struct HistoryEntry {
             state: HvacRequest,
         }

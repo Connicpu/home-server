@@ -7,7 +7,6 @@ use std::{
 };
 
 use arc_cell::ArcCell;
-use serde::{Deserialize, Serialize};
 
 use crate::{api::atticfan::FanState, RedisConn};
 
@@ -18,6 +17,8 @@ use self::{
 };
 
 use super::Probes;
+
+pub use models::hvac_request::HvacRequest;
 
 pub mod oneshot_setpoint;
 pub mod override_pulse;
@@ -49,7 +50,7 @@ impl MixerState {
             fan_state,
             override_pulse: Arc::new(OverridePulse::new()),
             oneshot_setpoint: Arc::new(OneshotSetpoint::new()),
-            timed_ruleset: Arc::new(TimedRuleSet::load(redis).await),
+            timed_ruleset: Arc::new(timed_rule::load(redis).await),
             last_result: Arc::new(AtomicHvacRequest::new()),
             mode,
         })
@@ -115,6 +116,16 @@ impl MixerState {
     }
 }
 
+impl models::mixer::Mixer for MixerState {
+    fn mode(&self) -> HvacRequest {
+        self.mode()
+    }
+
+    async fn get_probe_temp(&self, probe: &str) -> Option<f32> {
+        self.probes.get(probe).await.map(|probe| probe.value())
+    }
+}
+
 #[derive(Clone)]
 pub struct Mixer {
     state: Arc<ArcCell<MixerState>>,
@@ -146,50 +157,8 @@ impl Mixer {
     }
 
     pub async fn reload_timed_rules(&self) {
-        let new_rules = Arc::new(TimedRuleSet::load(&self.state().redis).await);
+        let new_rules = Arc::new(timed_rule::load(&self.state().redis).await);
         self.update_state(|state| state.timed_ruleset = new_rules);
-    }
-}
-
-#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, Debug, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum HvacRequest {
-    Off,
-    Heat,
-    Cool,
-}
-
-impl HvacRequest {
-    pub fn from_payload(payload: &[u8]) -> Option<HvacRequest> {
-        match payload.get(0) {
-            Some(b'o') => Some(HvacRequest::Off),
-            Some(b'h') => Some(HvacRequest::Heat),
-            Some(b'c') => Some(HvacRequest::Cool),
-            _ => None,
-        }
-    }
-
-    pub fn payload_str(self) -> &'static str {
-        match self {
-            HvacRequest::Off => "off",
-            HvacRequest::Heat => "heat",
-            HvacRequest::Cool => "cool",
-        }
-    }
-
-    pub fn payload(self) -> &'static [u8] {
-        self.payload_str().as_bytes()
-    }
-}
-
-impl std::ops::BitAnd for HvacRequest {
-    type Output = HvacRequest;
-    fn bitand(self, rhs: HvacRequest) -> HvacRequest {
-        match (self, rhs) {
-            (HvacRequest::Heat, HvacRequest::Heat) => HvacRequest::Heat,
-            (HvacRequest::Cool, HvacRequest::Cool) => HvacRequest::Cool,
-            _ => HvacRequest::Off,
-        }
     }
 }
 

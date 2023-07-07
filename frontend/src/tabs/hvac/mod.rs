@@ -2,6 +2,8 @@ use sycamore::prelude::*;
 
 use crate::models::HvacMode;
 
+mod rules;
+
 #[component]
 pub fn HvacConfigPage(cx: Scope<'_>) -> View<DomNode> {
     let hvac_mode = use_context::<Signal<HvacMode>>(cx);
@@ -12,5 +14,9 @@ pub fn HvacConfigPage(cx: Scope<'_>) -> View<DomNode> {
             "Mode: "
             (hvac_mode.get())
         }
+        
+        hr {}
+
+        rules::RulesEditor()
     }
 }

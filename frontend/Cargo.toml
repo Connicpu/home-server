@@ -20,6 +20,7 @@ serde_json = "1.0"
 sycamore = { version = "0.8.2", features = ["suspense", "serde"] }
 wasm-bindgen = { version = "0.2.79", features = ["serde-serialize"]  }
 wasm-bindgen-futures = "0.4.29"
+models = { path = "../models" }
 
 [dependencies.web-sys]
 version = "0.3.4"

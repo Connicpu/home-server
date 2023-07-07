@@ -45,14 +45,17 @@ where
         .header("X-Auth", auth_token())
         .send()
         .await else {
+            web_sys::console::log_1(&format!("F (reqwest err) ({path})").into());
             return;
         };
 
     if response.status() != StatusCode::OK {
+        web_sys::console::log_1(&format!("F (status code) ({path})").into());
         return;
     }
 
     let Ok(value) = response.json::<J>().await else {
+        web_sys::console::log_1(&format!("F (json fail) ({path})").into());
         return;
     };
 

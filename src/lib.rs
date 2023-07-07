@@ -1,3 +1,5 @@
+#![feature(async_fn_in_trait)]
+
 use hvac::HvacState;
 use mqtt::MqttClient;
 use rumqttc::MqttOptions;

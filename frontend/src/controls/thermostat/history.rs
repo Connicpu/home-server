@@ -1,14 +1,17 @@
-use std::sync::atomic::{AtomicBool, Ordering::SeqCst};
+use std::{
+    sync::atomic::{AtomicBool, Ordering::SeqCst},
+    time::Duration,
+};
 
 use anyhow::bail;
 use chrono::{DateTime, Utc};
 use plotters_canvas::CanvasBackend;
 use serde::Deserialize;
-use sycamore::{prelude::*, futures::spawn_local_scoped};
+use sycamore::{futures::spawn_local_scoped, prelude::*};
 use wasm_bindgen::JsCast;
 use web_sys::{window, CanvasRenderingContext2d, HtmlCanvasElement};
 
-use crate::auth::auth_token;
+use crate::{auth::auth_token, models::Units};
 
 #[component]
 pub fn TemperatureHistory<G: Html>(cx: Scope) -> View<G> {
@@ -25,10 +28,10 @@ struct GraphParams {
 
 #[component]
 async fn TemperatureGraph<G: Html>(cx: Scope<'_>, params: GraphParams) -> View<G> {
-    let initial_data = get_day_history(&params.probe).await.unwrap_or(vec![]);
     let data = create_signal(cx, vec![]);
     let prepared = create_ref(cx, AtomicBool::new(false));
-    let canvas_node = create_node_ref(cx, );
+    let canvas_node = create_node_ref(cx);
+    let units = use_context::<Signal<Units>>(cx);
 
     create_effect(cx, move || {
         let data = data.get();
@@ -41,11 +44,16 @@ async fn TemperatureGraph<G: Html>(cx: Scope<'_>, params: GraphParams) -> View<G
             prepared.store(true, SeqCst);
         }
 
-        render_canvas(&canvas, &data).ok();
+        render_canvas(&canvas, &data, *units.get()).ok();
     });
 
     spawn_local_scoped(cx, async move {
-        data.set(initial_data);
+        loop {
+            if let Ok(new_data) = get_day_history(&params.probe).await {
+                data.set(new_data);
+            }
+            gloo_timers::future::sleep(Duration::from_secs(10)).await;
+        }
     });
 
     view! { cx,
@@ -123,12 +131,26 @@ async fn get_day_history(probe: &str) -> anyhow::Result<Vec<(f64, f64)>> {
     Ok(chart_history)
 }
 
-fn render_canvas(canvas: &DomNode, data: &[(f64, f64)]) -> anyhow::Result<()> {
+fn render_canvas(canvas: &DomNode, data: &[(f64, f64)], units: Units) -> anyhow::Result<()> {
     use plotters::prelude::*;
 
     let Ok(canvas) = canvas.inner_element().dyn_into::<HtmlCanvasElement>() else {
         bail!("Couldn't convert canvas to HtmlCanvasElement");
     };
+
+    let unit_transform = |x: f64| match units {
+        Units::Celcius => x,
+        Units::Fahrenheit => x * 9.0 / 5.0 + 32.0,
+    };
+
+    // Clear the canvas
+    let Some(ctx) = canvas.get_context("2d").map_err(|e| anyhow::anyhow!("JsError: {e:?}"))? else {
+        anyhow::bail!("No 2D context available");
+    };
+    let Some(ctx) = ctx.dyn_ref::<CanvasRenderingContext2d>() else {
+        anyhow::bail!("2D context is the wrong type");
+    };
+    ctx.clear_rect(0.0, 0.0, canvas.width() as f64, canvas.height() as f64);
 
     let Some(backend) = CanvasBackend::with_canvas_object(canvas) else {
         bail!("Couldn't create canvas backend");
@@ -154,6 +176,9 @@ fn render_canvas(canvas: &DomNode, data: &[(f64, f64)]) -> anyhow::Result<()> {
             bail!("Empty data set")
         };
 
+    let temp_min = unit_transform(temp_min);
+    let temp_max = unit_transform(temp_max);
+
     root.fill(&TRANSPARENT)?;
     let mut chart = ChartBuilder::on(&root)
         .x_label_area_size(40)
@@ -170,10 +195,44 @@ fn render_canvas(canvas: &DomNode, data: &[(f64, f64)]) -> anyhow::Result<()> {
         .y_label_formatter(&|x| format!("{:.1}", x))
         .draw()?;
 
-    chart.draw_series(LineSeries::new(
-        data.iter().cloned(),
-        &RED,
-    ))?;
+    if data.is_empty() {
+        return Ok(());
+    }
+
+    const WINDOW_SIZE: usize = 48;
+    const CHUNK_SIZE: usize = 18;
+    let chart_data = data
+        // Iterate over rolling windows of the data
+        .windows(WINDOW_SIZE)
+        // Average the windows
+        .map(|window| {
+            window
+                .iter()
+                .cloned()
+                // Compute the sum of the X and Y axis values in the window (aka time, temp)
+                .fold((0.0, 0.0, 0), |(acctime, acctemp, count), (time, temp)| {
+                    (acctime + time, acctemp + temp, count + 1)
+                })
+        })
+        // Divide the (X, Y) value by the count to turn it into an average
+        .map(|(acctime, acctemp, count)| (acctime / count as f64, acctemp / count as f64))
+        // Add extra data at the end to ensure no data points are left out of chunking
+        .chain([data[data.len() - 1]; CHUNK_SIZE - 1])
+        // Divide the data points into chunks
+        .array_chunks::<CHUNK_SIZE>()
+        // Average the chunks just like we did the windows
+        .map(|chunk| {
+            chunk
+                .into_iter()
+                .fold((0.0, 0.0, 0), |(acctime, acctemp, count), (time, temp)| {
+                    (acctime + time, acctemp + temp, count + 1)
+                })
+        })
+        .map(|(acctime, acctemp, count)| (acctime / count as f64, acctemp / count as f64))
+        // Convert to Fahrenheit if that's selected
+        .map(|(time, temp)| (time, unit_transform(temp)));
+
+    chart.draw_series(LineSeries::new(chart_data, &RED))?;
 
     Ok(())
 }

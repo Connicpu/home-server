@@ -133,3 +133,33 @@ hr {
 .tab-button.highlighted {
     background-color: rgba(50, 50, 100, 0.2);
 }
+
+table.day-set-table {
+    border-collapse: collapse;
+}
+
+table.day-set-table tr td {
+    border: 1px solid #333;
+    width: 1.5em;
+    text-align: center;
+    background-color: #777;
+    color: white;
+}
+
+table.day-set-table tr td.enabled {
+    background-color: green;
+    color: white;
+}
+
+table.setpoint-list {
+    border-collapse: collapse;
+}
+
+table.setpoint-list tr {
+    border: 1px solid #333;
+}
+
+table.setpoint-list tr>td,th {
+    border: 1px solid #333;
+    padding: 0.2em 0.4em;
+} 
