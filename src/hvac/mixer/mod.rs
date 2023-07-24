@@ -1,5 +1,6 @@
 use std::{
     cmp,
+    collections::BTreeSet,
     sync::{
         atomic::{AtomicU8, Ordering},
         Arc,
@@ -7,10 +8,15 @@ use std::{
 };
 
 use arc_cell::ArcCell;
+use tokio::{
+    runtime::Runtime,
+    task::{spawn_blocking, LocalSet},
+};
 
 use crate::{api::atticfan::FanState, RedisConn};
 
 use self::{
+    lua_controller::LuaController,
     oneshot_setpoint::{OneshotOrdering, OneshotSetpoint},
     override_pulse::OverridePulse,
     timed_rule::TimedRuleSet,
@@ -20,6 +26,7 @@ use super::Probes;
 
 pub use models::hvac_request::HvacRequest;
 
+pub mod lua_controller;
 pub mod oneshot_setpoint;
 pub mod override_pulse;
 pub mod set_point;
@@ -33,6 +40,7 @@ pub struct MixerState {
     pub override_pulse: Arc<OverridePulse>,
     pub oneshot_setpoint: Arc<OneshotSetpoint>,
     pub timed_ruleset: Arc<TimedRuleSet>,
+    pub lua: LuaController,
     pub last_result: Arc<AtomicHvacRequest>,
     pub mode: Arc<AtomicHvacRequest>,
 }
@@ -51,6 +59,11 @@ impl MixerState {
             override_pulse: Arc::new(OverridePulse::new()),
             oneshot_setpoint: Arc::new(OneshotSetpoint::new()),
             timed_ruleset: Arc::new(timed_rule::load(redis).await),
+            lua: {
+                let lua = LuaController::default();
+                lua.load_redis(redis).await.ok();
+                lua
+            },
             last_result: Arc::new(AtomicHvacRequest::new()),
             mode,
         })
@@ -103,9 +116,14 @@ impl MixerState {
             return Some(setpoint.action);
         }
 
-        // Evaluate our rule based setpoints
-        if let Some(request) = self.timed_ruleset.evaluate(self).await {
-            return Some(request);
+        if self.lua.is_loaded().await {
+            if let Some(request) = self.eval_lua().await {
+                return Some(request);
+            }
+        } else {
+            if let Some(request) = self.timed_ruleset.evaluate(self).await {
+                return Some(request);
+            }
         }
 
         None
@@ -113,6 +131,40 @@ impl MixerState {
 
     pub fn mode(&self) -> HvacRequest {
         self.mode.load()
+    }
+
+    pub async fn validate_lua_script(
+        &self,
+        script: String,
+    ) -> anyhow::Result<(Option<HvacRequest>, BTreeSet<String>)> {
+        let this = self.clone();
+        spawn_blocking(move || {
+            let rt = Runtime::new().unwrap();
+            let localset = LocalSet::new();
+            localset.block_on(&rt, async move { this.lua.validate(&script, &this).await })
+        }).await?
+    }
+
+    pub async fn set_active_lua_script(&self, script: String) -> anyhow::Result<()> {
+        let this = self.clone();
+        spawn_blocking(move || {
+            let rt = Runtime::new().unwrap();
+            let localset = LocalSet::new();
+            localset.block_on(&rt, async move { this.lua.load(&script).await })
+        }).await?
+    }
+
+    async fn eval_lua(&self) -> Option<HvacRequest> {
+        if !self.lua.is_loaded().await {
+            return None;
+        }
+
+        let this = self.clone();
+        spawn_blocking(move || {
+            let rt = Runtime::new().unwrap();
+            let localset = LocalSet::new();
+            localset.block_on(&rt, async move { this.lua.evaluate(&this).await })
+        }).await.ok().and_then(|x| x)
     }
 }
 

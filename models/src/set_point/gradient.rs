@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{mixer::Mixer, hvac_request::HvacRequest};
+use crate::mixer::Mixer;
 
 use super::EMPTY_REQUEST;
 
@@ -18,22 +18,33 @@ impl GradientSetPoint {
             0 => return EMPTY_REQUEST,
             1 => {
                 let point = &self.stop_points[0];
-                return (point.heat_value * self.weight, point.cool_value * self.weight);
+                return (
+                    point.heat_value * self.weight,
+                    point.cool_value * self.weight,
+                );
             }
-            _ => ()
+            _ => (),
         }
 
         let Some(temp) = state.get_probe_temp(&self.probe).await else {
             return EMPTY_REQUEST;
         };
-        
+
         let right_node = self.right_applicable_node(temp);
         if right_node == 0 {
             self.calculate(temp, &self.stop_points[0], &self.stop_points[1])
         } else if right_node == self.stop_points.len() {
-            self.calculate(temp, &self.stop_points[right_node - 2], &self.stop_points[right_node - 1])
+            self.calculate(
+                temp,
+                &self.stop_points[right_node - 2],
+                &self.stop_points[right_node - 1],
+            )
         } else {
-            self.calculate(temp, &self.stop_points[right_node - 1], &self.stop_points[right_node])
+            self.calculate(
+                temp,
+                &self.stop_points[right_node - 1],
+                &self.stop_points[right_node],
+            )
         }
     }
 
@@ -51,14 +62,16 @@ impl GradientSetPoint {
         let dh = right.heat_value - left.heat_value;
         let dc = right.cool_value - left.cool_value;
         let t = (temp - left.temp) / dt;
-        ((left.heat_value + dh * t) * self.weight, (left.cool_value + dc * t) * self.weight)
+        (
+            (left.heat_value + dh * t) * self.weight,
+            (left.cool_value + dc * t) * self.weight,
+        )
     }
 }
 
 #[derive(Copy, Clone, Serialize, Deserialize, Debug, PartialEq, PartialOrd)]
 pub struct StopPoint {
     pub temp: f32,
-    pub request: HvacRequest,
     pub heat_value: f32,
     pub cool_value: f32,
 }
@@ -69,8 +82,14 @@ struct UnsortedGradientSetPoint(GradientSetPoint);
 
 impl From<UnsortedGradientSetPoint> for GradientSetPoint {
     fn from(mut unsorted: UnsortedGradientSetPoint) -> Self {
-        unsorted.0.stop_points.retain(|point| point.temp.is_finite());
-        unsorted.0.stop_points.sort_by_key(|point| cursed_float_sortable(point.temp));
+        unsorted
+            .0
+            .stop_points
+            .retain(|point| point.temp.is_finite());
+        unsorted
+            .0
+            .stop_points
+            .sort_by_key(|point| cursed_float_sortable(point.temp));
         unsorted.0
     }
 }
@@ -80,4 +99,3 @@ fn cursed_float_sortable(f: f32) -> impl Ord {
     // xor the lower 31 bits by the value in the sign bit
     i ^ ((i >> 30) as u32 >> 1) as i32
 }
-

@@ -7,6 +7,7 @@ use sycamore::{futures::spawn_local_scoped, prelude::*};
 use crate::helpers::{create_saved_signal, start_signal_refresher};
 use crate::models::{HvacMode, HvacModeState, HvacRequest, PinState, Temperature, Units};
 
+mod ace;
 mod auth;
 mod controls;
 mod tabs;
@@ -18,6 +19,46 @@ fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
     sycamore::render(|cx| {
+        // Global context signals
+        let units = create_saved_signal(cx, "thermostat-units", Units::Celcius);
+        provide_context_ref(cx, units);
+    
+        let hvac_mode = create_saved_signal(cx, "cached-hvac-mode", HvacMode::Off);
+        provide_context_ref(cx, hvac_mode);
+        start_signal_refresher(
+            cx,
+            "thermostat/mode",
+            hvac_mode,
+            Duration::from_secs(30),
+            |ms: HvacModeState| ms.mode,
+        );
+    
+        let temperature = create_saved_signal(cx, "cached-temperature", None::<Temperature>);
+        provide_context_ref(cx, temperature);
+        start_signal_refresher(
+            cx,
+            "thermostat/probes/primary/temperature",
+            temperature,
+            Duration::from_secs(3),
+            |x| Some(Temperature(x)),
+        );
+    
+        let pinstate = create_saved_signal(cx, "cached-pinstate", PinState(HvacRequest::Off));
+        provide_context_ref(cx, pinstate);
+        {
+            #[derive(serde::Deserialize, serde::Serialize)]
+            struct HistoryEntry {
+                state: HvacRequest,
+            }
+            start_signal_refresher(
+                cx,
+                "thermostat/pinstate/history?start=0&stop=0",
+                pinstate,
+                Duration::from_secs(3),
+                |x: Vec<HistoryEntry>| PinState(x.get(0).map(|e| e.state).unwrap_or(HvacRequest::Off)),
+            );
+        }
+
         view! { cx,
             App()
         }
@@ -32,46 +73,6 @@ fn App(cx: Scope) -> View<DomNode> {
     spawn_local_scoped(cx, async move {
         auth::check_logged_in(logged_in).await;
     });
-
-    // Global context signals
-    let units = create_saved_signal(cx, "thermostat-units", Units::Celcius);
-    provide_context_ref(cx, units);
-
-    let hvac_mode = create_saved_signal(cx, "cached-hvac-mode", HvacMode::Off);
-    provide_context_ref(cx, hvac_mode);
-    start_signal_refresher(
-        cx,
-        "thermostat/mode",
-        hvac_mode,
-        Duration::from_secs(30),
-        |ms: HvacModeState| ms.mode,
-    );
-
-    let temperature = create_saved_signal(cx, "cached-temperature", None::<Temperature>);
-    provide_context_ref(cx, temperature);
-    start_signal_refresher(
-        cx,
-        "thermostat/probes/primary/temperature",
-        temperature,
-        Duration::from_secs(3),
-        |x| Some(Temperature(x)),
-    );
-
-    let pinstate = create_saved_signal(cx, "cached-pinstate", PinState(HvacRequest::Off));
-    provide_context_ref(cx, pinstate);
-    {
-        #[derive(serde::Deserialize, serde::Serialize)]
-        struct HistoryEntry {
-            state: HvacRequest,
-        }
-        start_signal_refresher(
-            cx,
-            "thermostat/pinstate/history?start=0&stop=0",
-            pinstate,
-            Duration::from_secs(3),
-            |x: Vec<HistoryEntry>| PinState(x.get(0).map(|e| e.state).unwrap_or(HvacRequest::Off)),
-        );
-    }
 
     view! { cx,
         div(class="main-body") {

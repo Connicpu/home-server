@@ -21,6 +21,7 @@ sycamore = { version = "0.8.2", features = ["suspense", "serde"] }
 wasm-bindgen = { version = "0.2.79", features = ["serde-serialize"]  }
 wasm-bindgen-futures = "0.4.29"
 models = { path = "../models" }
+gloo-utils = { version = "0.1.7", features = ["serde"] }
 
 [dependencies.web-sys]
 version = "0.3.4"

@@ -24,6 +24,7 @@ tracing = { version = "0.1.32", features = ["release_max_level_off"] }
 uuid = { version = "0.8.2", features = ["v4"] }
 warp = "0.3.2"
 models = { path = "models" }
+mlua = { version = "0.8", features = ["lua54", "vendored", "async", "serialize", "send"] }
 
 [profile.release]
 panic = "abort"

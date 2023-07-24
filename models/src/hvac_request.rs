@@ -13,9 +13,9 @@ pub enum HvacRequest {
 impl HvacRequest {
     pub fn from_payload(payload: &[u8]) -> Option<HvacRequest> {
         match payload.get(0) {
-            Some(b'o') => Some(HvacRequest::Off),
-            Some(b'h') => Some(HvacRequest::Heat),
-            Some(b'c') => Some(HvacRequest::Cool),
+            Some(b'o' | b'O') => Some(HvacRequest::Off),
+            Some(b'h' | b'H') => Some(HvacRequest::Heat),
+            Some(b'c' | b'C') => Some(HvacRequest::Cool),
             _ => None,
         }
     }

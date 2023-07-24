@@ -1,0 +1,69 @@
+{
+	"folders": [
+		{
+			"path": "C:/Users/conni/OneDrive/Documents/PlatformIO/Projects/AtticFanulator"
+		},
+		{
+			"name": "Thermostat",
+			"path": "C:/Users/conni/OneDrive/Documents/PlatformIO/Projects/Thermostat"
+		},
+		{
+			"path": "D:/Repos/home-server"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			"*.tsx": "xml",
+			"*.tcc": "cpp",
+			"vector": "cpp",
+			"array": "cpp",
+			"string": "cpp",
+			"unordered_map": "cpp",
+			"iterator": "cpp",
+			"functional": "cpp",
+			"random": "cpp",
+			"initializer_list": "cpp",
+			"iosfwd": "cpp",
+			"new": "cpp",
+			"tuple": "cpp",
+			"type_traits": "cpp",
+			"utility": "cpp",
+			"atomic": "cpp",
+			"bit": "cpp",
+			"cctype": "cpp",
+			"clocale": "cpp",
+			"cmath": "cpp",
+			"compare": "cpp",
+			"concepts": "cpp",
+			"cstdarg": "cpp",
+			"cstddef": "cpp",
+			"cstdint": "cpp",
+			"cstdio": "cpp",
+			"cstdlib": "cpp",
+			"cstring": "cpp",
+			"cwchar": "cpp",
+			"cwctype": "cpp",
+			"deque": "cpp",
+			"list": "cpp",
+			"map": "cpp",
+			"set": "cpp",
+			"exception": "cpp",
+			"algorithm": "cpp",
+			"memory": "cpp",
+			"memory_resource": "cpp",
+			"numeric": "cpp",
+			"optional": "cpp",
+			"string_view": "cpp",
+			"system_error": "cpp",
+			"limits": "cpp",
+			"ostream": "cpp",
+			"ranges": "cpp",
+			"stdexcept": "cpp",
+			"streambuf": "cpp",
+			"cinttypes": "cpp",
+			"typeinfo": "cpp"
+		},
+		"rust-analyzer.checkOnSave.extraArgs": [],
+		"rust-analyzer.diagnostics.experimental.enable": false
+	}
+}

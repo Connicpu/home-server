@@ -187,11 +187,10 @@ fn render_canvas(canvas: &DomNode, data: &[(f64, f64)], units: Units) -> anyhow:
 
     chart
         .configure_mesh()
-        .disable_x_mesh()
         .x_labels(12)
         .x_desc("Hours ago")
         .x_label_formatter(&|x| format!("{:.0}", x.abs()))
-        .y_labels(5)
+        .y_labels(8)
         .y_label_formatter(&|x| format!("{:.1}", x))
         .draw()?;
 

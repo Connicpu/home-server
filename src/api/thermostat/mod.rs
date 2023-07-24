@@ -18,6 +18,7 @@ use crate::{
     StatePackage,
 };
 
+pub mod lua;
 pub mod oneshot_setpoint;
 pub mod probes;
 pub mod pulse_override;
@@ -29,6 +30,7 @@ pub async fn routes(state: StatePackage<'_>) -> BoxedFilter<(impl Reply,)> {
     let probes = warp::path("probes").and(probes::routes(state).await);
     let rules = warp::path("rules").and(rules::routes(state).await);
     let pulse_override = warp::path("pulse_override").and(pulse_override::routes(state).await);
+    let lua = warp::path("lua").and(lua::routes(state).await);
 
     let pinstate_history = pinstate_history(state);
     let mode = mode(state);
@@ -39,6 +41,7 @@ pub async fn routes(state: StatePackage<'_>) -> BoxedFilter<(impl Reply,)> {
         .or(pulse_override)
         .or(pinstate_history)
         .or(mode)
+        .or(lua)
         .boxed()
 }
 

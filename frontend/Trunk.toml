@@ -1,3 +1,6 @@
+[serve]
+address = "0.0.0.0"
+
 [[proxy]]
 rewrite = "/api/"
 backend = "http://pi.iot.connieh.com:3030/"

@@ -1,3 +1,5 @@
+use std::collections::{BTreeMap, BTreeSet};
+
 use chrono::{DateTime, Duration, Utc};
 use digest::{Digest, KeyInit};
 use hmac::Hmac;
@@ -14,6 +16,11 @@ use warp::{
 use crate::{error::WebErrorExt, RedisConn, StatePackage};
 
 const TOKEN_DAYS: i64 = 30;
+
+pub const AUTH_LEVEL_READONLY: i32 = 0;
+pub const AUTH_LEVEL_QUICKACTION: i32 = 1;
+pub const AUTH_LEVEL_REPROGRAM: i32 = 2;
+pub const AUTH_LEVEL_ADMIN: i32 = 3;
 
 #[derive(Copy, Clone, Debug, Serialize)]
 pub enum AuthFailed {
@@ -72,9 +79,7 @@ pub async fn routes(state: StatePackage<'_>) -> BoxedFilter<(impl Reply,)> {
             .and(warp::put())
             .and(header("X-Username"))
             .and(header("X-Password"))
-            .and_then(move |user: String, pass: String| {
-                register(redis.clone(), user, pass)
-            })
+            .and_then(move |user: String, pass: String| register(redis.clone(), user, pass))
     };
 
     let put_password = {
@@ -96,13 +101,48 @@ pub async fn routes(state: StatePackage<'_>) -> BoxedFilter<(impl Reply,)> {
             .and(warp::put())
             .and(header("X-Username"))
             .and(header("X-AuthLevel"))
-            .and(with_auth(3))
-            .and_then(move |user: String, level: i32| {
-                set_auth_level(redis.clone(), user, level)
-            })
+            .and(with_auth(AUTH_LEVEL_ADMIN))
+            .and_then(move |user: String, level: i32| set_auth_level(redis.clone(), user, level))
     };
 
-    login.or(renew).or(register).or(put_password).or(put_auth_level).boxed()
+    let reset_password = {
+        let redis = redis.clone();
+        warp::path("reset_password")
+            .and(path::end())
+            .and(warp::put())
+            .and(header("X-Username"))
+            .and(with_auth(AUTH_LEVEL_ADMIN))
+            .and_then(move |user: String| reset_password(redis.clone(), user))
+    };
+
+    let list_users = {
+        let redis = redis.clone();
+        warp::path("list_users")
+            .and(path::end())
+            .and(warp::get())
+            .and(with_auth(AUTH_LEVEL_ADMIN))
+            .and_then(move || list_users(redis.clone()))
+    };
+
+    let delete_user = {
+        let redis = redis.clone();
+        warp::path("delete_user")
+            .and(path::end())
+            .and(warp::delete())
+            .and(header("X-Username"))
+            .and(with_auth(AUTH_LEVEL_ADMIN))
+            .and_then(move |user: String| delete_user(redis.clone(), user))
+    };
+
+    login
+        .or(renew)
+        .or(register)
+        .or(put_password)
+        .or(put_auth_level)
+        .or(reset_password)
+        .or(list_users)
+        .or(delete_user)
+        .boxed()
 }
 
 async fn validate_credentials(
@@ -110,7 +150,7 @@ async fn validate_credentials(
     user: &str,
     pass: &str,
 ) -> Result<bool, Rejection> {
-    let hash = hex::encode(Sha256::digest(pass));
+    let hash = hex::encode(<Sha256 as Digest>::digest(pass));
 
     let saved_hash: String = {
         let mut redis = redis.get();
@@ -146,7 +186,9 @@ async fn generate_auth_token(redis: &RedisConn, user: &str) -> Result<String, Re
 
 fn verify_auth_token(token: String) -> Result<Authentication, Rejection> {
     type VerifiedToken = Token<Header, Authentication, Verified>;
-    let token: VerifiedToken = token.verify_with_key(&jwt_key()).map_err(|_| AuthFailed::InvalidToken)?;
+    let token: VerifiedToken = token
+        .verify_with_key(&jwt_key())
+        .map_err(|_| AuthFailed::InvalidToken)?;
     Ok(token.claims().clone())
 }
 
@@ -182,7 +224,7 @@ async fn change_password(
     }
 
     let auth = verify_auth_token(token)?;
-    let hash = hex::encode(Sha256::digest(new_password));
+    let hash = hex::encode(<Sha256 as Digest>::digest(new_password));
 
     let mut redis = redis.get();
     let () = redis
@@ -200,7 +242,7 @@ async fn set_auth_level(redis: RedisConn, user: String, level: i32) -> Result<St
 }
 
 async fn register(redis: RedisConn, user: String, pass: String) -> Result<String, Rejection> {
-    let hash = hex::encode(Sha256::digest(pass));
+    let hash = hex::encode(<Sha256 as Digest>::digest(pass));
 
     {
         let mut redis = redis.get();
@@ -210,11 +252,56 @@ async fn register(redis: RedisConn, user: String, pass: String) -> Result<String
         let None: Option<String> = redis.hget("auth.password", &user).await.reject_err()? else {
             return Err(AuthFailed::AccountExists.into());
         };
-    
-        let () = redis.hset("auth.password", &user, hash).await.reject_err()?;
+
+        let () = redis
+            .hset("auth.password", &user, hash)
+            .await
+            .reject_err()?;
     }
 
     generate_auth_token(&redis, &user).await
+}
+
+async fn reset_password(redis: RedisConn, user: String) -> Result<String, Rejection> {
+    {
+        let mut redis = redis.get();
+        let () = redis.hdel("auth.password", &user).await.reject_err()?;
+    }
+
+    Ok("ok".into())
+}
+
+async fn list_users(redis: RedisConn) -> Result<String, Rejection> {
+    #[derive(Serialize)]
+    struct UserStatus {
+        level: i32,
+        registered: bool,
+    }
+
+    let mut redis = redis.get();
+
+    let user_levels: BTreeMap<String, i32> = redis.hgetall("auth.level").await.reject_err()?;
+    let registered_users: BTreeSet<String> = redis.hkeys("auth.password").await.reject_err()?;
+
+    Ok(serde_json::to_string(
+        &user_levels
+            .into_iter()
+            .map(|(user, level)| {
+                let registered = registered_users.contains(&user);
+                (user, UserStatus { level, registered })
+            })
+            .collect::<BTreeMap<String, UserStatus>>(),
+    )
+    .reject_err()?)
+}
+
+async fn delete_user(redis: RedisConn, user: String) -> Result<String, Rejection> {
+    let mut redis = redis.get();
+
+    let () = redis.hdel("auth.password", &user).await.reject_err()?;
+    let () = redis.hdel("auth.level", &user).await.reject_err()?;
+
+    Ok("ok".into())
 }
 
 fn jwt_key() -> Hmac<Sha384> {
