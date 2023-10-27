@@ -165,7 +165,7 @@ pub async fn initialize(
                     };
                     let state = state.payload_str();
                     if latest
-                        .map(|latest| latest.chars().nth(0) == state.chars().nth(0))
+                        .map(|latest| latest.chars().nth(0) != state.chars().nth(0))
                         .unwrap_or(true)
                     {
                         let Ok(()) = redis
