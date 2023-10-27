@@ -152,35 +152,29 @@ pub async fn initialize(
         let redis = redis.clone();
         let mqtt = mqtt.clone();
 
-        let record_pinstate = redis::Script::new(&format!(
-            r#"
-            local state = ARGV[1]
-            local time = ARGV[2]
-            local latest = redis.call('LINDEX', KEYS[1], 0)
-            if latest == nil or string.sub(latest, 1, #state) ~= state then
-                return redis.call('LPUSH', KEYS[1], state .. ':' .. time)
-            else
-                return 0
-            end
-        "#
-        ));
-
         mqtt.subscribe("home/thermostat/hvac/pinstate").await;
         mqtt.handle("home/thermostat/hvac/pinstate", move |_, payload| {
             let now = chrono::Utc::now().timestamp_millis();
             if let Some(state) = HvacRequest::from_payload(payload) {
-                let record_pinstate = record_pinstate.clone();
                 let redis = redis.clone();
                 crate::spawn("record_pinstate", async move {
                     let mut redis = redis.get();
-                    record_pinstate
-                        .prepare_invoke()
-                        .key(PINSTATE_HISTORY)
-                        .arg(state.payload_str())
-                        .arg(now)
-                        .invoke_async::<_, ()>(&mut redis)
-                        .await
-                        .ok(); // Ignore failures it's nbd
+                    let Ok(latest) = redis.lindex::<_, Option<String>>(PINSTATE_HISTORY, 0).await
+                    else {
+                        return;
+                    };
+                    let state = state.payload_str();
+                    if latest
+                        .map(|latest| latest.chars().nth(0) == state.chars().nth(0))
+                        .unwrap_or(true)
+                    {
+                        let Ok(()) = redis
+                            .lpush(PINSTATE_HISTORY, format!("{state}:{now}"))
+                            .await
+                        else {
+                            return;
+                        };
+                    }
                 });
             }
         })
