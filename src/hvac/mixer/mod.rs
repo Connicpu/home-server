@@ -8,12 +8,8 @@ use std::{
 };
 
 use arc_cell::ArcCell;
-use tokio::{
-    runtime::Runtime,
-    task::{spawn_blocking, LocalSet},
-};
 
-use crate::{api::atticfan::FanState, RedisConn};
+use crate::{api::atticfan::FanState, RedisConn, mqtt::MqttClient};
 
 use self::{
     lua_controller::LuaController,
@@ -35,6 +31,7 @@ pub mod timed_rule;
 #[derive(Clone)]
 pub struct MixerState {
     pub redis: RedisConn,
+    pub mqtt: MqttClient,
     pub probes: Probes,
     pub fan_state: FanState,
     pub override_pulse: Arc<OverridePulse>,
@@ -48,25 +45,27 @@ pub struct MixerState {
 impl MixerState {
     pub async fn new(
         redis: &RedisConn,
+        mqtt: &MqttClient,
         probes: Probes,
         mode: Arc<AtomicHvacRequest>,
         fan_state: FanState,
     ) -> Arc<Self> {
-        Arc::new(MixerState {
+        let state = MixerState {
             redis: redis.clone(),
+            mqtt: mqtt.clone(),
             probes,
             fan_state,
             override_pulse: Arc::new(OverridePulse::new()),
             oneshot_setpoint: Arc::new(OneshotSetpoint::new()),
             timed_ruleset: Arc::new(timed_rule::load(redis).await),
-            lua: {
-                let lua = LuaController::default();
-                lua.load_redis(redis).await.ok();
-                lua
-            },
+            lua: LuaController::default(),
             last_result: Arc::new(AtomicHvacRequest::new()),
             mode,
-        })
+        };
+
+        state.lua.load_redis(redis, state.clone()).await.ok();
+
+        Arc::new(state)
     }
 
     pub async fn query(&self) -> HvacRequest {
@@ -137,21 +136,11 @@ impl MixerState {
         &self,
         script: String,
     ) -> anyhow::Result<(Option<HvacRequest>, BTreeSet<String>)> {
-        let this = self.clone();
-        spawn_blocking(move || {
-            let rt = Runtime::new().unwrap();
-            let localset = LocalSet::new();
-            localset.block_on(&rt, async move { this.lua.validate(&script, &this).await })
-        }).await?
+        self.lua.validate(script, self.clone()).await
     }
 
     pub async fn set_active_lua_script(&self, script: String) -> anyhow::Result<()> {
-        let this = self.clone();
-        spawn_blocking(move || {
-            let rt = Runtime::new().unwrap();
-            let localset = LocalSet::new();
-            localset.block_on(&rt, async move { this.lua.load(&script).await })
-        }).await?
+        self.lua.load(script, self.clone()).await
     }
 
     async fn eval_lua(&self) -> Option<HvacRequest> {
@@ -159,12 +148,7 @@ impl MixerState {
             return None;
         }
 
-        let this = self.clone();
-        spawn_blocking(move || {
-            let rt = Runtime::new().unwrap();
-            let localset = LocalSet::new();
-            localset.block_on(&rt, async move { this.lua.evaluate(&this).await })
-        }).await.ok().and_then(|x| x)
+        self.lua.evaluate(self.clone()).await.ok()?
     }
 }
 

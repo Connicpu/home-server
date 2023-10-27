@@ -15,6 +15,11 @@ mod tabs;
 mod helpers;
 mod models;
 
+#[derive(Copy, Clone, PartialEq, Eq, Default)]
+pub struct LoggedInState {
+    logged_in: Option<bool>,
+}
+
 fn main() {
     std::panic::set_hook(Box::new(console_error_panic_hook::hook));
 
@@ -22,6 +27,14 @@ fn main() {
         // Global context signals
         let units = create_saved_signal(cx, "thermostat-units", Units::Celcius);
         provide_context_ref(cx, units);
+
+        let logged_in = create_signal(cx, LoggedInState::default());
+        provide_context_ref(cx, logged_in);
+
+        // Check our current log-in status first
+        spawn_local_scoped(cx, async move {
+            auth::check_logged_in(logged_in).await;
+        });
     
         let hvac_mode = create_saved_signal(cx, "cached-hvac-mode", HvacMode::Off);
         provide_context_ref(cx, hvac_mode);
@@ -67,18 +80,13 @@ fn main() {
 
 #[component]
 fn App(cx: Scope) -> View<DomNode> {
-    let logged_in = create_signal(cx, None);
-
-    // Check our current log-in status first
-    spawn_local_scoped(cx, async move {
-        auth::check_logged_in(logged_in).await;
-    });
+    let logged_in = use_context::<Signal<LoggedInState>>(cx);
 
     view! { cx,
         div(class="main-body") {
-            (if *logged_in.get() == Some(false) {
+            (if logged_in.get().logged_in == Some(false) {
                 view! { cx, auth::LoginForm(logged_in) }
-            } else if *logged_in.get() == Some(true) {
+            } else if logged_in.get().logged_in == Some(true) {
                 view! { cx, Main(logged_in) }
             } else {
                 view! { cx, "Please Wait 💕" }
@@ -88,7 +96,7 @@ fn App(cx: Scope) -> View<DomNode> {
 }
 
 #[component]
-fn Main<'a>(cx: Scope<'a>, logged_in: &'a Signal<Option<bool>>) -> View<DomNode> {
+fn Main<'a>(cx: Scope<'a>, logged_in: &'a Signal<LoggedInState>) -> View<DomNode> {
     let logout = move |_| {
         spawn_local_scoped(cx, async move {
             auth::logout(logged_in).await;
@@ -100,6 +108,6 @@ fn Main<'a>(cx: Scope<'a>, logged_in: &'a Signal<Option<bool>>) -> View<DomNode>
             "Logout"
         }
 
-        tabs::TabRoot(is_admin = *logged_in.get() == Some(true) && auth::is_auth_level(3))
+        tabs::TabRoot(is_admin = logged_in.get().logged_in == Some(true) && auth::is_auth_level(3))
     }
 }

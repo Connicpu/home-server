@@ -3,7 +3,7 @@ use std::{collections::HashMap, str::FromStr, sync::Arc, time::Duration};
 use redis::AsyncCommands;
 use tokio::sync::RwLock;
 
-use crate::{mqtt::MqttClient, RedisConn, api::atticfan::FanState};
+use crate::{api::atticfan::FanState, mqtt::MqttClient, RedisConn};
 
 use self::{
     mixer::{AtomicHvacRequest, HvacRequest, Mixer, MixerState},
@@ -17,7 +17,7 @@ pub mod probe;
 pub struct HvacState {
     pub probes: Probes,
     pub mixer: Mixer,
-    pub hvac_mode: Arc<AtomicHvacRequest>
+    pub hvac_mode: Arc<AtomicHvacRequest>,
 }
 
 pub const PROBE_ENDPOINTS: &str = "thermostat.config.probe_endpoints";
@@ -25,7 +25,11 @@ pub const CONFIG_MODE: &str = "thermostat.config.mode";
 pub const PROBE_HISTORY: &str = "thermostat.probes.history";
 pub const PINSTATE_HISTORY: &str = "thermostat.pinstate.history";
 
-pub async fn initialize(mqtt: &MqttClient, redis: &RedisConn, fan_state: &FanState) -> anyhow::Result<HvacState> {
+pub async fn initialize(
+    mqtt: &MqttClient,
+    redis: &RedisConn,
+    fan_state: &FanState,
+) -> anyhow::Result<HvacState> {
     // Create the primary probe
     let probes: Probes = Default::default();
     init_probe(&probes, mqtt, Probe::new("primary", "home/thermostat/temp")).await;
@@ -77,7 +81,14 @@ pub async fn initialize(mqtt: &MqttClient, redis: &RedisConn, fan_state: &FanSta
     }
 
     // Create the mixer
-    let mixer_state = MixerState::new(redis, probes.clone(), hvac_mode.clone(), fan_state.clone()).await;
+    let mixer_state = MixerState::new(
+        redis,
+        mqtt,
+        probes.clone(),
+        hvac_mode.clone(),
+        fan_state.clone(),
+    )
+    .await;
     let mixer = Mixer::new(mixer_state);
 
     // Create the mix sender
@@ -99,45 +110,39 @@ pub async fn initialize(mqtt: &MqttClient, redis: &RedisConn, fan_state: &FanSta
         let redis = redis.clone();
         let probes = probes.clone();
         crate::spawn("probe_historian", async move {
-            const PERIOD: u32 = 10;
-            const MAX_LEN: u32 = 60 * 60 * 24 * 366 / PERIOD; // Store ~1 year
-            let probe_push = redis::Script::new(&format!(
-                r#"
-                for i = 1, #KEYS do
-                    local history_key = KEYS[i]
-                    local last_value = redis.call('LINDEX', history_key, 0)
-                    if last_value ~= ARGV[i] then
-                        redis.call('LPUSH', history_key, ARGV[i])
-                    end
-                    redis.call('LTRIM', 0, {MAX_LEN}-1)
-                end
-                return #KEYS
-            "#
-            ));
+            const PERIOD: isize = 10;
+            const MAX_LEN: isize = 60 * 60 * 24 * 14 / PERIOD; // Store ~2 weeks
 
             loop {
                 tokio::time::sleep(Duration::from_secs(PERIOD as u64 / 2)).await;
 
                 // Store all of the probe's latest values into redis with a timestamp
                 let probes = probes.probes.read().await;
-
-                let mut invocation = probe_push.prepare_invoke();
+                let mut redis = redis.get();
                 for probe in probes.values() {
                     let value = probe.value();
                     if value.is_nan() {
                         continue;
                     }
-                    invocation.key(
-                        format!("{PROBE_HISTORY}:{}", probe.name())
-                    ).arg(format!(
+                    let history_key = format!("{PROBE_HISTORY}:{}", probe.name());
+                    let data = format!(
                         "{time}:{value}",
                         value = probe.value(),
                         time = probe.last_update()
-                    ));
-                }
+                    );
 
-                let mut redis = redis.get();
-                let _: Result<(), _> = invocation.invoke_async(&mut redis).await;
+                    let Ok(last_value) = redis.lindex::<_, String>(&history_key, 0).await else {
+                        continue;
+                    };
+                    if last_value != data {
+                        let Ok(()) = redis.lpush(&history_key, data).await else {
+                            continue;
+                        };
+                    }
+                    let Ok(()) = redis.ltrim(&history_key, 0, MAX_LEN - 1).await else {
+                        continue;
+                    };
+                }
             }
         });
     }
@@ -193,8 +198,34 @@ pub async fn initialize(mqtt: &MqttClient, redis: &RedisConn, fan_state: &FanSta
         })
     }
 
+    // Add MQTT Lua support
+    {
+        let mixer = mixer.clone();
+        mqtt.handle("*", move |path, payload| {
+            let state = mixer.state();
+            state.lua.on_mqtt((*state).clone(), path, payload);
+        })
+        .await;
+    }
+
+    // Lua Tick function
+    {
+        let mixer = mixer.clone();
+        crate::spawn("lua_tick", async move {
+            loop {
+                let state = mixer.state();
+                state.lua.tick((*state).clone()).await;
+                tokio::time::sleep(Duration::from_secs(5)).await;
+            }
+        })
+    }
+
     // Create the final HVAC state
-    Ok(HvacState { probes, mixer, hvac_mode })
+    Ok(HvacState {
+        probes,
+        mixer,
+        hvac_mode,
+    })
 }
 
 #[derive(Default, Clone)]

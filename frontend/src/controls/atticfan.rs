@@ -12,7 +12,7 @@ pub fn AtticFan(cx: Scope) -> View<DomNode> {
     let big_succ_state = create_signal(cx, false);
     let roof_fan_state = create_signal(cx, false);
 
-    start_refresh_state_loop(cx, big_succ_state.clone(), roof_fan_state.clone());
+    start_refresh_state_loop(cx, big_succ_state, roof_fan_state);
 
     let big_succ_class = create_selector(cx, || indicator_class(big_succ_state.get()));
     let roof_fan_class = create_selector(cx, || indicator_class(roof_fan_state.get()));

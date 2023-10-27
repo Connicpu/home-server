@@ -1,4 +1,4 @@
-use std::fmt;
+use std::{fmt, str::FromStr};
 
 use serde::{Serialize, Deserialize};
 
@@ -24,6 +24,22 @@ impl fmt::Display for HvacMode {
             HvacMode::Off => f.write_str("Off"),
             HvacMode::Heat => f.write_str("Heat"),
             HvacMode::Cool => f.write_str("Cool"),
+        }
+    }
+}
+
+impl FromStr for HvacMode {
+    type Err = ();
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        if s.eq_ignore_ascii_case("Off") {
+            Ok(HvacMode::Off)
+        } else if s.eq_ignore_ascii_case("Heat") {
+            Ok(HvacMode::Heat)
+        } else if s.eq_ignore_ascii_case("Cool") {
+            Ok(HvacMode::Cool)
+        } else {
+            Err(())
         }
     }
 }

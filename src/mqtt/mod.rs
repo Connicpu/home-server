@@ -50,8 +50,11 @@ async fn mqtt_listener(mut eventloop: rumqttc::EventLoop, router: Arc<RwLock<Rou
         let notification = eventloop.poll().await.expect(":glares:");
 
         if let Event::Incoming(Packet::Publish(packet)) = notification {
-            let router = router.write().await;
-            router.dispatch(&packet.topic, &packet.payload);
+            let router = router.clone();
+            tokio::task::spawn_blocking(move || {
+                let router = router.blocking_write();
+                router.dispatch(&packet.topic, &packet.payload);
+            }).await.expect("Nothing should go wrong");
         }
     }
 }

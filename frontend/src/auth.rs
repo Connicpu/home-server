@@ -8,13 +8,15 @@ use serde::{Deserialize, Serialize};
 use sycamore::{futures::spawn_local_scoped, prelude::*};
 use web_sys::{window, Event};
 
+use crate::LoggedInState;
+
 static AUTH_TOKEN: OptionalArcCell<String> = OptionalArcCell::const_new();
 pub fn auth_token() -> String {
     AUTH_TOKEN.get().map(|s| (*s).clone()).unwrap_or_default()
 }
 
 #[component]
-pub fn LoginForm<'a, G: Html>(cx: Scope<'a>, logged_in: &'a Signal<Option<bool>>) -> View<G> {
+pub fn LoginForm<'a, G: Html>(cx: Scope<'a>, logged_in: &'a Signal<LoggedInState>) -> View<G> {
     let username = create_signal(cx, String::new());
     let password = create_signal(cx, String::new());
     let problem = create_signal(cx, String::new());
@@ -62,7 +64,7 @@ fn on_login<'a>(
     username: &'a Signal<String>,
     password: &'a Signal<String>,
     problem: &'a Signal<String>,
-    logged_in: &'a Signal<Option<bool>>,
+    logged_in: &'a Signal<LoggedInState>,
 ) -> impl Fn(Event) + 'a {
     move |_: Event| {
         problem.set("".into());
@@ -78,7 +80,9 @@ fn on_login<'a>(
                     }
 
                     AUTH_TOKEN.set(Some(Arc::new(auth_token)));
-                    logged_in.set(Some(true));
+                    logged_in.set(LoggedInState {
+                        logged_in: Some(true),
+                    });
                 }
                 Err(err) => {
                     problem.set(format!("{:?}", err));
@@ -93,7 +97,7 @@ fn on_register<'a>(
     username: &'a Signal<String>,
     password: &'a Signal<String>,
     problem: &'a Signal<String>,
-    logged_in: &'a Signal<Option<bool>>,
+    logged_in: &'a Signal<LoggedInState>,
 ) -> impl Fn(Event) + 'a {
     move |_: Event| {
         problem.set("".into());
@@ -109,7 +113,9 @@ fn on_register<'a>(
                     }
 
                     AUTH_TOKEN.set(Some(Arc::new(auth_token)));
-                    logged_in.set(Some(true));
+                    logged_in.set(LoggedInState {
+                        logged_in: Some(true),
+                    });
                 }
                 Err(err) => {
                     problem.set(format!("{:?}", err));
@@ -119,59 +125,78 @@ fn on_register<'a>(
     }
 }
 
-pub async fn check_logged_in(logged_in: &Signal<Option<bool>>) {
+pub async fn check_logged_in(logged_in: &Signal<LoggedInState>) {
     let Some(local_storage) = window().unwrap().local_storage().unwrap() else {
-        logged_in.set(Some(false));
+        logged_in.set(LoggedInState {
+            logged_in: Some(false),
+        });
         return;
     };
 
     let Some(auth_token) = local_storage.get_item("auth-token").unwrap() else {
-        logged_in.set(Some(false));
+        logged_in.set(LoggedInState {
+            logged_in: Some(false),
+        });
         return;
     };
 
     if auth_token.is_empty() {
-        logged_in.set(Some(false));
+        logged_in.set(LoggedInState {
+            logged_in: Some(false),
+        });
         return;
     }
 
     AUTH_TOKEN.set(Some(Arc::new(auth_token.clone())));
-    logged_in.set(Some(true));
+    logged_in.set(LoggedInState {
+        logged_in: Some(true),
+    });
 
     let base = window().unwrap().origin();
     let Ok(response) = reqwest::Client::new()
         .get(format!("{base}/api/auth/renew"))
         .header("X-Auth", &auth_token)
         .send()
-        .await else {
-            logged_in.set(Some(false));
-            return;
-        };
+        .await
+    else {
+        logged_in.set(LoggedInState {
+            logged_in: Some(false),
+        });
+        return;
+    };
 
     if response.status() != StatusCode::OK {
         AUTH_TOKEN.set(None);
-        logged_in.set(Some(false));
+        logged_in.set(LoggedInState {
+            logged_in: Some(false),
+        });
         return;
     }
 
     let Ok(new_token) = response.text().await else {
         AUTH_TOKEN.set(None);
-        logged_in.set(Some(false));
+        logged_in.set(LoggedInState {
+            logged_in: Some(false),
+        });
         return;
     };
 
     local_storage.set_item("auth-token", &new_token).unwrap();
     AUTH_TOKEN.set(Some(Arc::new(new_token)));
-    logged_in.set(Some(true));
+    logged_in.set(LoggedInState {
+        logged_in: Some(true),
+    });
 }
 
-pub async fn logout(logged_in: &Signal<Option<bool>>) {
+pub async fn logout(logged_in: &Signal<LoggedInState>) {
     if let Some(local_storage) = window().unwrap().local_storage().unwrap() {
         local_storage.remove_item("auth-token").unwrap();
     }
 
     AUTH_TOKEN.set(None);
-    logged_in.set(Some(false));
+    logged_in.set(LoggedInState {
+        logged_in: Some(false),
+    });
 }
 
 async fn login(username: &str, password: &str) -> anyhow::Result<String> {
@@ -210,8 +235,13 @@ async fn register(username: &str, password: &str) -> anyhow::Result<String> {
 }
 
 pub fn is_auth_level(level: i32) -> bool {
-    let Some(token) = AUTH_TOKEN.get() else { return false; };
-    let Ok(token): Result<Token<Header, Authentication, _>, _> = Token::parse_unverified(&token) else { return false; };
+    let Some(token) = AUTH_TOKEN.get() else {
+        return false;
+    };
+    let Ok(token): Result<Token<Header, Authentication, _>, _> = Token::parse_unverified(&token)
+    else {
+        return false;
+    };
 
     token.claims().auth_level >= level
 }

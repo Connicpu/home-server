@@ -23,7 +23,7 @@ enum ValidationResponse {
 }
 
 pub async fn routes(state: StatePackage<'_>) -> BoxedFilter<(impl Reply,)> {
-    let scripts = {
+    let scripts = { // GET /api/thermostat/lua/scripts
         let redis = state.redis.clone();
         warp::path("scripts")
             .and(path::end())
@@ -40,7 +40,7 @@ pub async fn routes(state: StatePackage<'_>) -> BoxedFilter<(impl Reply,)> {
             })
     };
 
-    let get_script = {
+    let get_script = { // GET /api/thermostat/lua/scripts/<name>
         let redis = state.redis.clone();
         warp::path("scripts")
             .and(path::param())
