@@ -39,70 +39,7 @@ pub async fn run_script_loop(
         let next_tick = Instant::now() + Duration::from_secs(1);
 
         // Check if the script should be reloaded
-        let state_script = state.script.get();
-        'load_script: {
-            if last_script_timestamp != state_script.1 {
-                last_script_timestamp = state_script.1;
-                if let Err(e) = test_script(&state_script.0, &script_state).await {
-                    eprintln!("Error loading script during test_script\n{e:?}");
-                    mqtt.publish(
-                        channels::SCRIPT_DATA_ERROR,
-                        QoS::ExactlyOnce,
-                        true,
-                        serde_json::json!({
-                            "success": false,
-                            "error_at": "test_script",
-                            "error": format!("{e:?}"),
-                        })
-                        .to_string(),
-                    )
-                    .await?;
-                    break 'load_script;
-                }
-                if let Err(e) = load_script(&mut lua, &state_script.0).await {
-                    eprintln!("Error loading script\n{e:?}");
-                    mqtt.publish(
-                        channels::SCRIPT_DATA_ERROR,
-                        QoS::ExactlyOnce,
-                        true,
-                        serde_json::json!({
-                            "success": false,
-                            "error_at": "load_script",
-                            "error": format!("{e:?}"),
-                        })
-                        .to_string(),
-                    )
-                    .await?;
-                    break 'load_script;
-                }
-                if let Err(e) = init_script(&mut lua, &script_state).await {
-                    eprintln!("Error initializing script\n{e:?}");
-                    mqtt.publish(
-                        channels::SCRIPT_DATA_ERROR,
-                        QoS::ExactlyOnce,
-                        true,
-                        serde_json::json!({
-                            "success": false,
-                            "error_at": "init_script",
-                            "error": format!("{e:?}"),
-                        })
-                        .to_string(),
-                    )
-                    .await?;
-                    break 'load_script;
-                }
-                mqtt.publish(
-                    channels::SCRIPT_DATA_ERROR,
-                    QoS::ExactlyOnce,
-                    true,
-                    serde_json::json!({
-                        "success": true,
-                    })
-                    .to_string(),
-                )
-                .await?;
-            }
-        }
+        try_load(&mut lua, &script_state, &mut last_script_timestamp).await?;
 
         if let Err(e) = tick_script(&mut lua, &script_state).await {
             eprintln!("Script tick error{e:?}");
@@ -121,86 +58,178 @@ pub async fn run_script_loop(
         }
 
         if next_evaluation < Instant::now() {
-            let mut next_call = None;
-
-            if next_call.is_none()
-                && let Some(timed_override) = *state.timed_override.get()
-            {
-                if timed_override.expiration > Utc::now() {
-                    next_call = Some(timed_override.command);
-                } else {
-                    state.timed_override.take();
-                    publish_timed_override(&mqtt, &state).await?;
-                }
-            }
-
-            if next_call.is_none()
-                && let Some(ref oneshot_override) = *state.oneshot_override.get()
-            {
-                if let Some(currtemp) = state.probe_values.get().get(&oneshot_override.probe) {
-                    match (
-                        oneshot_override.comparison,
-                        currtemp.partial_cmp(&(oneshot_override.setpoint as f64)),
-                    ) {
-                        (OneshotOrdering::Less, Some(Ordering::Less)) => {
-                            next_call = Some(oneshot_override.command);
-                        }
-                        (OneshotOrdering::Greater, Some(Ordering::Greater)) => {
-                            next_call = Some(oneshot_override.command);
-                        }
-                        _ => {
-                            state.oneshot_override.take();
-                            publish_oneshot_override(&mqtt, &state).await?;
-                        }
-                    }
-                } else {
-                    state.oneshot_override.take();
-                    publish_oneshot_override(&mqtt, &state).await?;
-                }
-            }
-
-            if next_call.is_none() {
-                match evaluate_script(&mut lua, &script_state).await {
-                    Ok(Some(call)) => next_call = HvacRequest::from_string(call),
-                    Ok(None) => {}
-                    Err(e) => {
-                        eprintln!("Script evaluate error{e:?}");
-                        mqtt.publish(
-                            channels::SCRIPT_DATA_ERROR,
-                            QoS::ExactlyOnce,
-                            true,
-                            serde_json::json!({
-                                "success": false,
-                                "error_at": "evaluate_script",
-                                "error": format!("{e:?}"),
-                            })
-                            .to_string(),
-                        )
-                        .await?;
-                    }
-                };
-            }
-
-            if let Some(next_call) = next_call {
-                if next_call != *state.last_call.get() {
-                    println!("New call: {next_call}");
-                    state.last_call.set(Arc::new(next_call));
-                }
-            }
-
-            mqtt.publish(
-                channels::HVAC_REMOTESTATE_SET,
-                QoS::AtLeastOnce,
-                false,
-                state.last_call.get().payload_str(),
-            )
-            .await?;
+            evaluate_call(&mut lua, &script_state).await?;
 
             next_evaluation = Instant::now() + Duration::from_secs(10);
         }
 
         tokio::time::sleep_until(next_tick.into()).await;
     }
+}
+
+async fn try_load(
+    lua: &mut Lua,
+    script_state: &ScriptState,
+    last_script_timestamp: &mut DateTime<Utc>,
+) -> anyhow::Result<()> {
+    let state_script = script_state.state.script.get();
+    if *last_script_timestamp != state_script.1 {
+        *last_script_timestamp = state_script.1;
+        if let Err(e) = test_script(&state_script.0, &script_state).await {
+            eprintln!("Error loading script during test_script\n{e:?}");
+            script_state
+                .mqtt
+                .publish(
+                    channels::SCRIPT_DATA_ERROR,
+                    QoS::ExactlyOnce,
+                    true,
+                    serde_json::json!({
+                        "success": false,
+                        "error_at": "test_script",
+                        "error": format!("{e:?}"),
+                    })
+                    .to_string(),
+                )
+                .await?;
+            return Ok(());
+        }
+        if let Err(e) = load_script(lua, &state_script.0).await {
+            eprintln!("Error loading script\n{e:?}");
+            script_state
+                .mqtt
+                .publish(
+                    channels::SCRIPT_DATA_ERROR,
+                    QoS::ExactlyOnce,
+                    true,
+                    serde_json::json!({
+                        "success": false,
+                        "error_at": "load_script",
+                        "error": format!("{e:?}"),
+                    })
+                    .to_string(),
+                )
+                .await?;
+            return Ok(());
+        }
+        if let Err(e) = init_script(lua, &script_state).await {
+            eprintln!("Error initializing script\n{e:?}");
+            script_state
+                .mqtt
+                .publish(
+                    channels::SCRIPT_DATA_ERROR,
+                    QoS::ExactlyOnce,
+                    true,
+                    serde_json::json!({
+                        "success": false,
+                        "error_at": "init_script",
+                        "error": format!("{e:?}"),
+                    })
+                    .to_string(),
+                )
+                .await?;
+            return Ok(());
+        }
+        script_state
+            .mqtt
+            .publish(
+                channels::SCRIPT_DATA_ERROR,
+                QoS::ExactlyOnce,
+                true,
+                serde_json::json!({
+                    "success": true,
+                })
+                .to_string(),
+            )
+            .await?;
+    }
+    Ok(())
+}
+
+async fn evaluate_call(lua: &mut Lua, script_state: &ScriptState) -> anyhow::Result<()> {
+    let mut next_call = None;
+
+    if next_call.is_none()
+        && let Some(timed_override) = *script_state.state.timed_override.get()
+    {
+        if timed_override.expiration > Utc::now() {
+            next_call = Some(timed_override.command);
+        } else {
+            script_state.state.timed_override.take();
+            publish_timed_override(&script_state.mqtt, &script_state.state).await?;
+        }
+    }
+
+    if next_call.is_none()
+        && let Some(ref oneshot_override) = *script_state.state.oneshot_override.get()
+    {
+        if let Some(currtemp) = script_state
+            .state
+            .probe_values
+            .get()
+            .get(&oneshot_override.probe)
+        {
+            match (
+                oneshot_override.comparison,
+                currtemp.partial_cmp(&(oneshot_override.setpoint as f64)),
+            ) {
+                (OneshotOrdering::Less, Some(Ordering::Less)) => {
+                    next_call = Some(oneshot_override.command);
+                }
+                (OneshotOrdering::Greater, Some(Ordering::Greater)) => {
+                    next_call = Some(oneshot_override.command);
+                }
+                _ => {
+                    script_state.state.oneshot_override.take();
+                    publish_oneshot_override(&script_state.mqtt, &script_state.state).await?;
+                }
+            }
+        } else {
+            script_state.state.oneshot_override.take();
+            publish_oneshot_override(&script_state.mqtt, &script_state.state).await?;
+        }
+    }
+
+    if next_call.is_none() {
+        match evaluate_script(lua, &script_state).await {
+            Ok(Some(call)) => next_call = HvacRequest::from_string(call),
+            Ok(None) => {}
+            Err(e) => {
+                eprintln!("Script evaluate error{e:?}");
+                script_state
+                    .mqtt
+                    .publish(
+                        channels::SCRIPT_DATA_ERROR,
+                        QoS::ExactlyOnce,
+                        true,
+                        serde_json::json!({
+                            "success": false,
+                            "error_at": "evaluate_script",
+                            "error": format!("{e:?}"),
+                        })
+                        .to_string(),
+                    )
+                    .await?;
+            }
+        };
+    }
+
+    if let Some(next_call) = next_call {
+        if next_call != *script_state.state.last_call.get() {
+            println!("New call: {next_call}");
+            script_state.state.last_call.set(Arc::new(next_call));
+        }
+    }
+
+    script_state
+        .mqtt
+        .publish(
+            channels::HVAC_REMOTESTATE_SET,
+            QoS::AtLeastOnce,
+            false,
+            script_state.state.last_call.get().payload_str(),
+        )
+        .await?;
+    Ok(())
 }
 
 pub async fn test_script(script: &str, state: &ScriptState) -> anyhow::Result<()> {

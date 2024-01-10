@@ -6,7 +6,7 @@ version = "0.1.0"
 [dependencies]
 anyhow = "1.0.56"
 arc-cell = "0.3.1"
-chrono = { version = "0.4.19", features = ["serde"] }
+chrono = {version = "0.4.19", features = ["serde"]}
 digest = "0.10.3"
 dotenv_codegen = "0.15.0"
 futures-util = "0.3.21"
@@ -14,29 +14,29 @@ hex = "0.4.3"
 hmac = "0.12.1"
 http = "0.2.6"
 jwt = "0.16.0"
-redis = { version = "0.21.5", features = ["tokio-comp", "connection-manager"] }
+mlua = {version = "0.8", features = ["lua54", "vendored", "async", "serialize", "send"]}
+models = {path = "models"}
+redis = {version = "0.21.5", features = ["tokio-comp", "connection-manager"]}
 rumqttc = "0.11.0"
-serde = { version = "1.0.136", features = ["derive"] }
+serde = {version = "1.0.136", features = ["derive"]}
 serde_json = "1.0.79"
 sha2 = "0.10.2"
-tokio = { version = "1.29.0", features = ["full", "tracing"] }
-tracing = { version = "0.1.32", features = ["release_max_level_off"] }
-uuid = { version = "0.8.2", features = ["v4"] }
+tokio = {version = "1.29.0", features = ["full", "tracing"]}
+tracing = {version = "0.1.32", features = ["release_max_level_off"]}
+uuid = {version = "0.8.2", features = ["v4"]}
 warp = "0.3.2"
-models = { path = "models" }
-mlua = { version = "0.8", features = ["lua54", "vendored", "async", "serialize", "send"] }
 
 [profile.release]
-panic = "abort"
 lto = true
+panic = "abort"
 
 [profile.release.package.frontend]
-opt-level = "s"
 codegen-units = 1
+opt-level = "s"
 
 [features]
-routes = []
 default = ["routes"]
+routes = []
 
 [workspace]
 members = ["frontend", "models", "thermostatd"]
