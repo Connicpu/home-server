@@ -39,4 +39,4 @@ routes = []
 default = ["routes"]
 
 [workspace]
-members = ["frontend", "models"]
+members = ["frontend", "models", "thermostatd"]

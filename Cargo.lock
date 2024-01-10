@@ -2121,6 +2121,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "thermostatd"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arc-cell",
+ "chrono",
+ "dotenv",
+ "dotenv_codegen",
+ "mlua",
+ "models",
+ "redis",
+ "rumqttc",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+]
+
+[[package]]
 name = "thiserror"
 version = "1.0.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -20,6 +20,10 @@ impl HvacRequest {
         }
     }
 
+    pub fn from_string(payload: String) -> Option<HvacRequest> {
+        HvacRequest::from_payload(payload.as_bytes())
+    }
+
     pub fn payload_str(self) -> &'static str {
         match self {
             HvacRequest::Off => "off",
@@ -51,5 +55,11 @@ impl fmt::Display for HvacRequest {
             HvacRequest::Heat => f.write_str("Heat"),
             HvacRequest::Cool => f.write_str("Cool"),
         }
+    }
+}
+
+impl Default for HvacRequest {
+    fn default() -> Self {
+        HvacRequest::Off
     }
 }

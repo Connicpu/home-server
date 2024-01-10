@@ -1,0 +1,21 @@
+[package]
+name = "thermostatd"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow = "1.0"
+arc-cell = "0.3.3"
+chrono = { version = "0.4.19", features = ["serde"] }
+dotenv = "0.15.0"
+dotenv_codegen = "0.15.0"
+mlua = { version = "0.8", features = ["lua54", "vendored", "async", "serialize", "send"] }
+models = { path = "../models" }
+redis = { version = "0.21.5", features = ["tokio-comp", "connection-manager"] }
+rumqttc = "0.11.0"
+serde = { version = "1.0.136", features = ["derive"] }
+serde_json = "1.0.79"
+sha2 = "0.10.2"
+tokio = { version = "1.29.0", features = ["full"] }
