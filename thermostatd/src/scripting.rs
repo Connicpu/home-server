@@ -333,6 +333,15 @@ impl LuaUserData for ScriptState {
 
             program_table[&active_time].call_async(()).await
         });
+
+        methods.add_function("serialize", |lua, value: LuaValue| {
+            let jvalue: serde_json::Value = lua.from_value(value)?;
+            Ok(serde_json::to_string(&jvalue).luafy_error()?)
+        });
+        methods.add_function("deserialize", |lua, data: String| {
+            let jvalue: serde_json::Value = serde_json::from_str(&data).luafy_error()?;
+            lua.to_value(&jvalue)
+        });
     }
 }
 
